@@ -13,13 +13,34 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::EventLoopExtWebSys;
 
-use crate::{engine::Engine, graphics::Graphics};
+use crate::{
+    camera::CameraConfig,
+    ecs::{IntoSystem, Schedule, System},
+    engine::Engine,
+};
 
-#[derive(Default)]
 pub struct App {
     #[cfg(target_arch = "wasm32")]
     proxy: Option<winit::event_loop::EventLoopProxy<Client>>,
     client: Option<Client>,
+    config: Option<AppConfig>,
+}
+
+#[derive(Default)]
+pub(crate) struct AppConfig {
+    pub(crate) camera_config: CameraConfig,
+    pub(crate) systems: Vec<(Schedule, Box<dyn System>)>,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self {
+            #[cfg(target_arch = "wasm32")]
+            proxy: None,
+            client: None,
+            config: Some(AppConfig::default()),
+        }
+    }
 }
 
 impl App {
@@ -27,7 +48,25 @@ impl App {
         Self::default()
     }
 
-    pub fn run(&mut self) {
+    pub fn set_camera(mut self, camera_config: CameraConfig) -> Self {
+        let config = self.config.as_mut().expect("app config already taken");
+        config.camera_config = camera_config;
+        self
+    }
+
+    pub fn add_systems<S, Params>(mut self, schedule: Schedule, system: S) -> Self
+    where
+        S: IntoSystem<Params>,
+        S::System: 'static,
+    {
+        let config = self.config.as_mut().expect("app config already taken");
+        config
+            .systems
+            .push((schedule, Box::new(system.into_system())));
+        self
+    }
+
+    pub fn run(mut self) {
         #[cfg(not(target_arch = "wasm32"))]
         env_logger::init();
 
@@ -39,13 +78,12 @@ impl App {
             .expect("failed to build event loop");
 
         #[cfg(not(target_arch = "wasm32"))]
-        event_loop.run_app(self).expect("failed to run app");
+        event_loop.run_app(&mut self).expect("failed to run app");
 
         #[cfg(target_arch = "wasm32")]
         {
-            let mut app = App::new();
-            app.proxy = Some(event_loop.create_proxy());
-            event_loop.spawn_app(app);
+            self.proxy = Some(event_loop.create_proxy());
+            event_loop.spawn_app(self);
         }
     }
 }
@@ -75,16 +113,18 @@ impl ApplicationHandler<Client> for App {
                 .expect("failed to create window"),
         );
 
+        let config = self.config.take().expect("app config already taken");
+
         #[cfg(not(target_arch = "wasm32"))]
         {
-            self.client = Some(pollster::block_on(Client::new(window)));
+            self.client = Some(pollster::block_on(Client::new(config, window)));
         }
 
         #[cfg(target_arch = "wasm32")]
         {
             if let Some(proxy) = self.proxy.take() {
                 wasm_bindgen_futures::spawn_local(async move {
-                    assert!(proxy.send_event(Client::new(window).await).is_ok())
+                    assert!(proxy.send_event(Client::new(config, window).await).is_ok())
                 });
             }
         }
@@ -127,7 +167,7 @@ impl ApplicationHandler<Client> for App {
                 ..
             } => match (code, state.is_pressed()) {
                 (KeyCode::Escape, true) => event_loop.exit(),
-                (code, is_pressed) => client.handle_key(code, is_pressed),
+                (code, is_pressed) => client.handle_key_press(code, is_pressed),
             },
             _ => {}
         }
@@ -135,33 +175,31 @@ impl ApplicationHandler<Client> for App {
 }
 
 pub struct Client {
-    graphics: Graphics,
     engine: Engine,
 }
 
 impl Client {
-    async fn new(window: Arc<Window>) -> Self {
-        let graphics = Graphics::new(window).await;
-        let engine = Engine::new(&graphics);
+    async fn new(app_config: AppConfig, window: Arc<Window>) -> Self {
+        let engine = Engine::new(app_config, window).await;
 
-        Self { graphics, engine }
+        Self { engine }
     }
 
     #[cfg(target_arch = "wasm32")]
     fn window(&self) -> &Window {
-        self.graphics.window()
+        &self.engine.graphics.window
     }
 
     fn render(&mut self) {
-        self.engine.update(&mut self.graphics);
-        self.engine.render(&self.graphics);
+        self.engine.update();
+        self.engine.render();
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.engine.resize(new_size, &mut self.graphics);
+        self.engine.resize(new_size);
     }
 
-    fn handle_key(&mut self, code: KeyCode, is_pressed: bool) {
-        self.engine.handle_key(code, is_pressed, &mut self.graphics);
+    fn handle_key_press(&mut self, code: KeyCode, pressed: bool) {
+        self.engine.handle_key_press(code, pressed);
     }
 }

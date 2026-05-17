@@ -1,110 +1,98 @@
-use cgmath::SquareMatrix;
-use winit::keyboard::KeyCode;
+use glam::{Mat4, Vec3};
 
-// TODO: use glam
-pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_cols(
-    cgmath::Vector4::new(1.0, 0.0, 0.0, 0.0),
-    cgmath::Vector4::new(0.0, 1.0, 0.0, 0.0),
-    cgmath::Vector4::new(0.0, 0.0, 0.5, 0.0),
-    cgmath::Vector4::new(0.0, 0.0, 0.5, 1.0),
-);
+use crate::ecs::ResMut;
+use crate::prelude::WorldPosition;
 
-pub struct Camera {
-    pub eye: cgmath::Point3<f32>,
-    pub target: cgmath::Point3<f32>,
-    pub up: cgmath::Vector3<f32>,
-    pub aspect: f32,
-    pub fovy: f32,
-    pub znear: f32,
-    pub zfar: f32,
+pub type Camera<'a> = ResMut<'a, CameraState>;
+
+#[derive(Debug, Clone)]
+pub struct CameraConfig {
+    pub position: WorldPosition,
+    pub looking_at: WorldPosition,
+    pub fov: f32,
 }
 
-impl Camera {
-    pub fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+impl Default for CameraConfig {
+    fn default() -> Self {
+        Self {
+            position: WorldPosition {
+                x: 0.0,
+                y: 1.0,
+                z: 2.0,
+            },
+            looking_at: WorldPosition {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            fov: 45.0,
+        }
+    }
+}
 
-        OPENGL_TO_WGPU_MATRIX * proj * view
+pub struct CameraState {
+    pub position: WorldPosition,
+    pub looking_at: WorldPosition,
+    pub fovy: f32,
+    pub(crate) aspect: f32,
+}
+
+impl CameraState {
+    pub fn new(camera_config: CameraConfig) -> Self {
+        Self {
+            position: camera_config.position,
+            looking_at: camera_config.looking_at,
+            fovy: camera_config.fov,
+            aspect: 1.0,
+        }
+    }
+
+    pub(crate) fn build_view_projection_matrix(&self) -> Mat4 {
+        let view = Mat4::look_at_rh(
+            (&self.position).into(),
+            (&self.looking_at).into(),
+            Vec3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            },
+        );
+        let proj = Self::perspective_reverse_z(self.fovy.to_radians(), self.aspect, 0.1);
+
+        proj * view
+    }
+
+    pub(crate) fn resize(&mut self, surface_config: &wgpu::SurfaceConfiguration) {
+        self.aspect = surface_config.width as f32 / surface_config.height as f32;
+    }
+
+    #[rustfmt::skip]
+    fn perspective_reverse_z(fovy: f32, aspect: f32, znear: f32) -> Mat4 {
+        let f = 1.0 / (0.5 * fovy).tan();
+
+        Mat4::from_cols_array(&[
+            f / aspect, 0.0, 0.0, 0.0,
+            0.0, f, 0.0, 0.0,
+            0.0, 0.0, 0.0, -1.0,
+            0.0, 0.0, znear, 0.0,
+        ])
     }
 }
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CameraUniform {
+pub(crate) struct CameraUniform {
     view_proj: [[f32; 4]; 4],
 }
 
 impl CameraUniform {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            view_proj: cgmath::Matrix4::identity().into(),
+            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
         }
     }
 
-    pub fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_projection_matrix().into();
-    }
-}
-
-pub struct CameraController {
-    speed: f32,
-    is_forward_pressed: bool,
-    is_backward_pressed: bool,
-    is_left_pressed: bool,
-    is_right_pressed: bool,
-}
-
-impl CameraController {
-    pub fn new() -> Self {
-        Self {
-            speed: 0.2,
-            is_forward_pressed: false,
-            is_backward_pressed: false,
-            is_left_pressed: false,
-            is_right_pressed: false,
-        }
-    }
-
-    pub fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
-        match code {
-            KeyCode::KeyW | KeyCode::ArrowUp => {
-                self.is_forward_pressed = is_pressed;
-                true
-            }
-            KeyCode::KeyA | KeyCode::ArrowLeft => {
-                self.is_left_pressed = is_pressed;
-                true
-            }
-            KeyCode::KeyS | KeyCode::ArrowDown => {
-                self.is_backward_pressed = is_pressed;
-                true
-            }
-            KeyCode::KeyD | KeyCode::ArrowRight => {
-                self.is_right_pressed = is_pressed;
-                true
-            }
-            _ => false,
-        }
-    }
-
-    pub fn update_camera(&self, camera: &mut Camera) {
-        if self.is_forward_pressed {
-            camera.eye.z -= self.speed;
-            camera.target.z -= self.speed;
-        }
-        if self.is_backward_pressed {
-            camera.eye.z += self.speed;
-            camera.target.z += self.speed;
-        }
-
-        if self.is_right_pressed {
-            camera.eye.x += self.speed;
-            camera.target.x += self.speed;
-        }
-
-        if self.is_left_pressed {
-            camera.eye.x -= self.speed;
-            camera.target.x -= self.speed;
-        }
+    pub(crate) fn update_view_proj(&mut self, camera: &CameraState) {
+        self.view_proj = camera.build_view_projection_matrix().to_cols_array_2d();
     }
 }
