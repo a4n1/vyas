@@ -153,7 +153,11 @@ impl ApplicationHandler<Client> for App {
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => client.resize(size),
+            WindowEvent::Resized(size) => {
+                client.resize(size);
+                client.request_redraw();
+            }
+            WindowEvent::Focused(true) | WindowEvent::Occluded(false) => client.request_redraw(),
             WindowEvent::RedrawRequested => {
                 client.render();
             }
@@ -185,9 +189,12 @@ impl Client {
         Self { engine }
     }
 
-    #[cfg(target_arch = "wasm32")]
     fn window(&self) -> &Window {
         &self.engine.graphics.window
+    }
+
+    fn request_redraw(&self) {
+        self.window().request_redraw();
     }
 
     fn render(&mut self) {

@@ -128,8 +128,6 @@ impl Graphics {
     }
 
     pub(crate) fn render(&self, pipeline: &Pipeline, world: &World) {
-        self.window.request_redraw();
-
         if !self.state.is_surface_configured {
             return;
         }
@@ -233,5 +231,6 @@ impl Graphics {
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
+        self.window.request_redraw();
     }
 }
