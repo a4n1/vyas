@@ -1,6 +1,6 @@
 use glam::Vec3;
 
-use crate::pipeline::CHUNK_SIZE;
+use crate::config::RenderConfig;
 
 #[derive(Debug, Default, Clone, Eq, Hash, PartialEq)]
 pub struct GridPosition {
@@ -10,8 +10,8 @@ pub struct GridPosition {
 }
 
 impl GridPosition {
-    pub(crate) fn to_chunk_position(&self) -> Self {
-        let size = CHUNK_SIZE as i32;
+    pub(crate) fn to_chunk_position(&self, render_config: &RenderConfig) -> Self {
+        let size = render_config.chunk_size as i32;
 
         Self {
             x: self.x.div_euclid(size),
@@ -20,8 +20,8 @@ impl GridPosition {
         }
     }
 
-    pub(crate) fn to_local_position(&self) -> Self {
-        let size = CHUNK_SIZE as i32;
+    pub(crate) fn to_local_position(&self, render_config: &RenderConfig) -> Self {
+        let size = render_config.chunk_size as i32;
 
         Self {
             x: self.x.rem_euclid(size),
@@ -36,6 +36,18 @@ pub struct WorldPosition {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+}
+
+impl WorldPosition {
+    pub(crate) fn to_chunk_position(&self, render_config: &RenderConfig) -> GridPosition {
+        let size = render_config.chunk_size as f32;
+
+        GridPosition {
+            x: (self.x / render_config.voxel_size).div_euclid(size) as i32,
+            y: (self.y / render_config.voxel_size).div_euclid(size) as i32,
+            z: (self.z / render_config.voxel_size).div_euclid(size) as i32,
+        }
+    }
 }
 
 impl From<&WorldPosition> for Vec3 {

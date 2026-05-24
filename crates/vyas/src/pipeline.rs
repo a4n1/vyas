@@ -2,18 +2,11 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     camera::{CameraState, CameraUniform},
+    config::RenderConfig,
     ecs::World,
     graphics::Graphics,
     vertex::Vertex,
 };
-
-pub(crate) const CHUNK_SIZE: usize = 16;
-pub(crate) const MAX_BLOCKS_PER_CHUNK: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
-pub(crate) const MAX_VERTICES_PER_CHUNK: usize = MAX_BLOCKS_PER_CHUNK * 8;
-pub(crate) const MAX_INDICES_PER_CHUNK: usize = MAX_BLOCKS_PER_CHUNK * 36;
-pub(crate) const MAX_VISIBLE_CHUNKS: usize = 180;
-pub(crate) const MAX_VERTICES: usize = MAX_VERTICES_PER_CHUNK * MAX_VISIBLE_CHUNKS;
-pub(crate) const MAX_INDICES: usize = MAX_INDICES_PER_CHUNK * MAX_VISIBLE_CHUNKS;
 
 pub struct Pipeline {
     pub(crate) camera_uniform: CameraUniform,
@@ -36,6 +29,7 @@ impl Pipeline {
             });
 
         let camera = world.resource::<CameraState>();
+        let render_config = *world.resource::<RenderConfig>();
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
@@ -154,14 +148,14 @@ impl Pipeline {
 
         let vertex_buffer = graphics.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Vertex Buffer"),
-            size: (MAX_VERTICES * std::mem::size_of::<Vertex>()) as u64,
+            size: render_config.max_buffer_size,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let index_buffer = graphics.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Index Buffer"),
-            size: (MAX_INDICES * std::mem::size_of::<u32>()) as u64,
+            size: render_config.max_buffer_size,
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

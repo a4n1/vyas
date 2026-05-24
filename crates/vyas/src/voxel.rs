@@ -1,6 +1,7 @@
 use crate::{
     chunk::{Chunk, ChunkMap},
     color::Color,
+    config::RenderConfig,
     ecs::{CommandQueue, SystemParam, World},
     position::GridPosition,
 };
@@ -17,8 +18,9 @@ impl VoxelCommands {
     pub fn spawn(&mut self, voxel_position: GridPosition, voxel: Voxel) {
         let queue = unsafe { &*self.queue };
         queue.borrow_mut().push(Box::new(move |world| {
-            let chunk_position = voxel_position.to_chunk_position();
-            let local_position = voxel_position.to_local_position();
+            let render_config = *world.resource::<RenderConfig>();
+            let chunk_position = voxel_position.to_chunk_position(&render_config);
+            let local_position = voxel_position.to_local_position(&render_config);
 
             let entity = {
                 let chunk_map = world.resource::<ChunkMap>();

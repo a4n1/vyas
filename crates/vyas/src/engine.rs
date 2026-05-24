@@ -24,15 +24,21 @@ pub(crate) struct Engine {
 
 impl Engine {
     pub(crate) async fn new(app_config: AppConfig, window: Arc<Window>) -> Self {
+        let AppConfig {
+            camera_config,
+            render_config,
+            systems,
+        } = app_config;
+
         let mut world = World::new();
         world.insert_resource(InputState::new());
-        world.insert_resource(CameraState::new(app_config.camera_config));
+        world.insert_resource(CameraState::new(camera_config));
+        world.insert_resource(render_config);
         world.insert_resource(ChunkMap::new());
 
         let graphics = Graphics::new(window).await;
         let pipeline = Pipeline::new(&graphics, &world);
         let fps_counter = FpsCounter::new();
-        let systems = app_config.systems;
 
         Self {
             graphics,

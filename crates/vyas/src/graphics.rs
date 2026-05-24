@@ -2,7 +2,13 @@ use std::{iter, sync::Arc};
 
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{chunk::Chunk, ecs::World, pipeline::Pipeline, vertex::Vertex};
+use crate::{
+    chunk::{Chunk, ChunkMap},
+    config::RenderConfig,
+    ecs::{Entity, World},
+    pipeline::Pipeline,
+    vertex::Vertex,
+};
 
 pub(crate) struct Graphics {
     pub(crate) window: Arc<Window>,
@@ -15,6 +21,7 @@ pub(crate) struct Graphics {
 
 struct State {
     is_surface_configured: bool,
+    visible_chunks: Vec<Entity>,
 }
 
 impl Graphics {
@@ -88,6 +95,7 @@ impl Graphics {
             queue,
             state: State {
                 is_surface_configured: false,
+                visible_chunks: Vec::new(),
             },
         }
     }
@@ -100,13 +108,18 @@ impl Graphics {
     }
 
     pub(crate) fn update(&mut self, pipeline: &Pipeline, world: &World) {
-        let chunks = world.query::<&mut Chunk, ()>();
-
         let mut vertex_byte_offset = 0u64;
         let mut index_byte_offset = 0u64;
 
-        for mut chunk in &chunks {
-            let mesh = chunk.mesh();
+        let chunk_map = world.resource::<ChunkMap>();
+        let render_config = *world.resource::<RenderConfig>();
+        let chunks = chunk_map.visible_chunk_entities(world);
+
+        for entity in &chunks {
+            let mut chunk = world
+                .get_mut::<Chunk>(*entity)
+                .expect("visible chunk entity should have a chunk component");
+            let mesh = chunk.mesh(&render_config);
             let vertex_bytes = bytemuck::cast_slice(&mesh.vertices);
             let index_bytes = bytemuck::cast_slice(&mesh.indices);
 
@@ -119,6 +132,8 @@ impl Graphics {
             vertex_byte_offset += vertex_bytes.len() as u64;
             index_byte_offset += index_bytes.len() as u64;
         }
+
+        self.state.visible_chunks = chunks;
 
         self.queue.write_buffer(
             &pipeline.camera_buffer,
@@ -195,13 +210,15 @@ impl Graphics {
         render_pass.set_pipeline(&pipeline.render_pipeline);
         render_pass.set_bind_group(0, &pipeline.camera_bind_group, &[]);
 
-        let chunks = world.query::<&mut Chunk, ()>();
-
         let mut vertex_byte_offset = 0u64;
         let mut index_byte_offset = 0u64;
+        let render_config = *world.resource::<RenderConfig>();
 
-        for mut chunk in &chunks {
-            let mesh = chunk.mesh();
+        for entity in &self.state.visible_chunks {
+            let mut chunk = world
+                .get_mut::<Chunk>(*entity)
+                .expect("failed to get chunk");
+            let mesh = chunk.mesh(&render_config);
 
             let vertex_byte_len = (mesh.vertices.len() * std::mem::size_of::<Vertex>()) as u64;
 
