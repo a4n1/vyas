@@ -29,6 +29,26 @@ impl GridPosition {
             z: self.z.rem_euclid(size),
         }
     }
+
+    pub(crate) fn to_world_position(&self, render_config: &RenderConfig) -> WorldPosition {
+        let scale = render_config.chunk_size as f32 * render_config.voxel_size;
+
+        WorldPosition {
+            x: self.x as f32 * scale,
+            y: self.y as f32 * scale,
+            z: self.z as f32 * scale,
+        }
+    }
+}
+
+impl From<&GridPosition> for Vec3 {
+    fn from(GridPosition { x, y, z }: &GridPosition) -> Self {
+        Vec3 {
+            x: *x as f32,
+            y: *y as f32,
+            z: *z as f32,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone)]
