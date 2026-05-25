@@ -3,11 +3,11 @@ use std::{iter, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
+    buffer::{ChunkBuffer, ChunkBufferItem},
     chunk::{Chunk, ChunkMap},
     config::RenderConfig,
-    ecs::{Entity, World},
+    ecs::World,
     pipeline::Pipeline,
-    vertex::Vertex,
 };
 
 pub(crate) struct Graphics {
@@ -21,11 +21,12 @@ pub(crate) struct Graphics {
 
 struct State {
     is_surface_configured: bool,
-    visible_chunks: Vec<Entity>,
+    chunk_buffer: ChunkBuffer,
+    draw_chunks: Vec<ChunkBufferItem>,
 }
 
 impl Graphics {
-    pub(crate) async fn new(window: Arc<Window>) -> Self {
+    pub(crate) async fn new(window: Arc<Window>, render_config: &RenderConfig) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -95,7 +96,8 @@ impl Graphics {
             queue,
             state: State {
                 is_surface_configured: false,
-                visible_chunks: Vec::new(),
+                chunk_buffer: ChunkBuffer::new(render_config),
+                draw_chunks: Vec::new(),
             },
         }
     }
@@ -108,32 +110,29 @@ impl Graphics {
     }
 
     pub(crate) fn update(&mut self, pipeline: &Pipeline, world: &World) {
-        let mut vertex_byte_offset = 0u64;
-        let mut index_byte_offset = 0u64;
-
         let chunk_map = world.resource::<ChunkMap>();
         let render_config = *world.resource::<RenderConfig>();
         let chunks = chunk_map.visible_chunk_entities(world);
 
+        self.state.draw_chunks = Vec::with_capacity(chunks.len());
+
         for entity in &chunks {
             let mut chunk = world
                 .get_mut::<Chunk>(*entity)
-                .expect("visible chunk entity should have a chunk component");
-            let mesh = chunk.mesh(&render_config);
-            let vertex_bytes = bytemuck::cast_slice(&mesh.vertices);
-            let index_bytes = bytemuck::cast_slice(&mesh.indices);
+                .expect("entity should have a chunk component");
 
-            self.queue
-                .write_buffer(&pipeline.vertex_buffer, vertex_byte_offset, vertex_bytes);
-
-            self.queue
-                .write_buffer(&pipeline.index_buffer, index_byte_offset, index_bytes);
-
-            vertex_byte_offset += vertex_bytes.len() as u64;
-            index_byte_offset += index_bytes.len() as u64;
+            if let Some(buffer_chunk) = self.state.chunk_buffer.insert(
+                entity,
+                &mut chunk,
+                pipeline,
+                &self.queue,
+                &render_config,
+            ) {
+                self.state.draw_chunks.push(buffer_chunk);
+            }
         }
 
-        self.state.visible_chunks = chunks;
+        self.state.chunk_buffer.cleanup();
 
         self.queue.write_buffer(
             &pipeline.camera_buffer,
@@ -142,7 +141,7 @@ impl Graphics {
         );
     }
 
-    pub(crate) fn render(&self, pipeline: &Pipeline, world: &World) {
+    pub(crate) fn render(&self, pipeline: &Pipeline) {
         if !self.state.is_surface_configured {
             return;
         }
@@ -210,38 +209,24 @@ impl Graphics {
         render_pass.set_pipeline(&pipeline.render_pipeline);
         render_pass.set_bind_group(0, &pipeline.camera_bind_group, &[]);
 
-        let mut vertex_byte_offset = 0u64;
-        let mut index_byte_offset = 0u64;
-        let render_config = *world.resource::<RenderConfig>();
-
-        for entity in &self.state.visible_chunks {
-            let mut chunk = world
-                .get_mut::<Chunk>(*entity)
-                .expect("failed to get chunk");
-            let mesh = chunk.mesh(&render_config);
-
-            let vertex_byte_len = (mesh.vertices.len() * std::mem::size_of::<Vertex>()) as u64;
-
-            let index_byte_len = (mesh.indices.len() * std::mem::size_of::<u32>()) as u64;
-
+        for draw_chunk in &self.state.draw_chunks {
             render_pass.set_vertex_buffer(
                 0,
-                pipeline
-                    .vertex_buffer
-                    .slice(vertex_byte_offset..vertex_byte_offset + vertex_byte_len),
+                pipeline.vertex_buffer.slice(
+                    draw_chunk.vertex_allocation.offset
+                        ..draw_chunk.vertex_allocation.offset + draw_chunk.vertex_byte_len,
+                ),
             );
 
             render_pass.set_index_buffer(
-                pipeline
-                    .index_buffer
-                    .slice(index_byte_offset..index_byte_offset + index_byte_len),
+                pipeline.index_buffer.slice(
+                    draw_chunk.index_allocation.offset
+                        ..draw_chunk.index_allocation.offset + draw_chunk.index_byte_len,
+                ),
                 wgpu::IndexFormat::Uint32,
             );
 
-            render_pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
-
-            vertex_byte_offset += vertex_byte_len;
-            index_byte_offset += index_byte_len;
+            render_pass.draw_indexed(0..draw_chunk.mesh_index_count, 0, 0..1);
         }
 
         drop(render_pass);

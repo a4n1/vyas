@@ -36,7 +36,7 @@ impl Engine {
         world.insert_resource(render_config);
         world.insert_resource(ChunkMap::new());
 
-        let graphics = Graphics::new(window).await;
+        let graphics = Graphics::new(window, &render_config).await;
         let pipeline = Pipeline::new(&graphics, &world);
         let fps_counter = FpsCounter::new();
 
@@ -78,7 +78,7 @@ impl Engine {
     }
 
     pub(crate) fn render(&mut self) {
-        self.graphics.render(&self.pipeline, &self.world);
+        self.graphics.render(&self.pipeline);
         self.fps_counter.tick();
     }
 

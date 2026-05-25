@@ -1,4 +1,5 @@
 pub mod app;
+pub mod buffer;
 pub mod camera;
 pub mod chunk;
 pub mod color;
