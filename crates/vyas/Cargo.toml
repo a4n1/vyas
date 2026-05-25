@@ -12,8 +12,19 @@ env_logger.workspace = true
 glam.workspace = true
 log.workspace = true
 pollster.workspace = true
+rand.workspace = true
 wgpu.workspace = true
 winit.workspace = true
+
+[dev-dependencies]
+criterion = "0.8"
+
+[features]
+bench = []
+
+[[bench]]
+name = "generate_mesh"
+harness = false
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_log.workspace = true

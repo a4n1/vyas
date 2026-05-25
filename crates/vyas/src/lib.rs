@@ -1,4 +1,6 @@
 pub mod app;
+#[cfg(feature = "bench")]
+pub mod bench_support;
 pub mod buffer;
 pub mod camera;
 pub mod chunk;
