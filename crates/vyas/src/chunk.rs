@@ -6,6 +6,7 @@ use crate::{
     camera::CameraState,
     config::RenderConfig,
     ecs::{Entity, World},
+    frustum::Frustum,
     mesh::Mesh,
     position::GridPosition,
     voxel::Voxel,
@@ -75,74 +76,47 @@ impl ChunkMap {
         let render_config = *world.resource::<RenderConfig>();
 
         let camera_chunk_position = camera.position.to_chunk_position(&render_config);
-        let mut chunks = Vec::new();
+        let frustum = Frustum::from_view_projection(&camera.build_view_projection_matrix());
+        let mut chunks = Vec::with_capacity(self.map.len());
 
-        for y in camera_chunk_position.y - render_config.max_render_distance
-            ..=camera_chunk_position.y + render_config.max_render_distance
-        {
-            for z in camera_chunk_position.z - render_config.max_render_distance
-                ..=camera_chunk_position.z + render_config.max_render_distance
-            {
-                for x in camera_chunk_position.x - render_config.max_render_distance
-                    ..=camera_chunk_position.x + render_config.max_render_distance
-                {
-                    let chunk_position = GridPosition { x, y, z };
-
-                    if !self.chunk_intersects_frustum(&chunk_position, &camera, &render_config) {
-                        continue;
-                    }
-
-                    let Some(entity) = self.get(&chunk_position).copied() else {
-                        continue;
-                    };
-
-                    chunks.push(entity);
-                }
+        for (chunk_position, entity) in &self.map {
+            if !Self::chunk_in_render_distance(
+                chunk_position,
+                &camera_chunk_position,
+                render_config.max_render_distance,
+            ) {
+                continue;
             }
+
+            if !Self::chunk_intersects_frustum(chunk_position, &frustum, &render_config) {
+                continue;
+            }
+
+            chunks.push(*entity);
         }
 
         chunks
     }
 
-    fn chunk_intersects_frustum(
-        &self,
+    fn chunk_in_render_distance(
         chunk_position: &GridPosition,
-        camera: &CameraState,
+        camera_chunk_position: &GridPosition,
+        max_render_distance: i32,
+    ) -> bool {
+        (chunk_position.x - camera_chunk_position.x).abs() <= max_render_distance
+            && (chunk_position.y - camera_chunk_position.y).abs() <= max_render_distance
+            && (chunk_position.z - camera_chunk_position.z).abs() <= max_render_distance
+    }
+
+    fn chunk_intersects_frustum(
+        chunk_position: &GridPosition,
+        frustum: &Frustum,
         render_config: &RenderConfig,
     ) -> bool {
-        let view_proj = camera.build_view_projection_matrix();
-
         let min = Vec3::from(&chunk_position.to_world_position(render_config))
             - Vec3::splat(render_config.voxel_size * 0.5);
         let max = min + Vec3::splat(render_config.chunk_size as f32 * render_config.voxel_size);
 
-        let mut outside_left = true;
-        let mut outside_right = true;
-        let mut outside_top = true;
-        let mut outside_bottom = true;
-        let mut outside_near = true;
-
-        let corners = [
-            Vec3::new(min.x, min.y, min.z),
-            Vec3::new(max.x, min.y, min.z),
-            Vec3::new(min.x, max.y, min.z),
-            Vec3::new(max.x, max.y, min.z),
-            Vec3::new(min.x, min.y, max.z),
-            Vec3::new(max.x, min.y, max.z),
-            Vec3::new(min.x, max.y, max.z),
-            Vec3::new(max.x, max.y, max.z),
-        ];
-
-        for corner in corners {
-            let clip = view_proj * corner.extend(1.0);
-
-            outside_left &= clip.x < -clip.w;
-            outside_right &= clip.x > clip.w;
-            outside_top &= clip.y > clip.w;
-            outside_bottom &= clip.y < -clip.w;
-            outside_near &= clip.z > clip.w;
-        }
-
-        !(outside_left || outside_right || outside_top || outside_bottom || outside_near)
+        frustum.intersects_aabb(min, max)
     }
 }

@@ -9,6 +9,7 @@ pub mod config;
 pub mod ecs;
 pub mod engine;
 pub mod fps;
+pub mod frustum;
 pub mod graphics;
 pub mod input;
 pub mod mesh;

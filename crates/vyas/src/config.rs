@@ -10,8 +10,8 @@ impl Default for RenderConfig {
     fn default() -> Self {
         Self {
             chunk_size: 16,
-            voxel_size: 1.0,
-            max_render_distance: 8,
+            voxel_size: 0.1,
+            max_render_distance: 128,
             max_buffer_size: 268435456,
         }
     }
