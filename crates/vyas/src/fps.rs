@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 pub(crate) struct FpsCounter {
     last_update: Instant,
