@@ -1,6 +1,9 @@
 use std::{cell::RefCell, sync::Arc};
 
-use winit::{dpi::PhysicalSize, window::Window};
+use winit::{
+    dpi::{PhysicalPosition, PhysicalSize},
+    window::Window,
+};
 
 use crate::{
     app::AppConfig,
@@ -97,8 +100,13 @@ impl Engine {
         camera.resize(&self.graphics.surface_config);
     }
 
-    pub(crate) fn handle_input(&mut self, button: InputButton, pressed: bool) {
+    pub(crate) fn handle_button_press(&mut self, button: InputButton, pressed: bool) {
         let mut input_state = self.world.resource_mut::<InputState>();
-        input_state.insert(button, pressed);
+        input_state.insert_pressed(button, pressed);
+    }
+
+    pub(crate) fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {
+        let mut input_state = self.world.resource_mut::<InputState>();
+        input_state.set_mouse_position(position, &self.world, &self.graphics.surface_config);
     }
 }

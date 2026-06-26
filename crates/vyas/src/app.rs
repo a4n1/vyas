@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use winit::{
     application::ApplicationHandler,
+    dpi::PhysicalPosition,
     event::*,
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::PhysicalKey,
@@ -179,10 +180,13 @@ impl ApplicationHandler<Client> for App {
                     },
                 ..
             } => {
-                client.handle_input(code.into(), state.is_pressed());
+                client.handle_button_press(code.into(), state.is_pressed());
             }
             WindowEvent::MouseInput { button, state, .. } => {
-                client.handle_input(button.into(), state.is_pressed());
+                client.handle_button_press(button.into(), state.is_pressed());
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                client.handle_mouse_move(position);
             }
             _ => {}
         }
@@ -217,7 +221,11 @@ impl Client {
         self.engine.resize(new_size);
     }
 
-    fn handle_input(&mut self, button: InputButton, pressed: bool) {
-        self.engine.handle_input(button, pressed);
+    fn handle_button_press(&mut self, button: InputButton, pressed: bool) {
+        self.engine.handle_button_press(button, pressed);
+    }
+
+    fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {
+        self.engine.handle_mouse_move(position);
     }
 }

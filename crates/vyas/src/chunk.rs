@@ -50,6 +50,10 @@ impl Chunk {
         self.voxels.insert(position, voxel);
         self.dirty = true;
     }
+
+    pub(crate) fn contains(&self, position: &GridPosition) -> bool {
+        self.voxels.contains_key(position)
+    }
 }
 
 pub(crate) struct ChunkMap {
