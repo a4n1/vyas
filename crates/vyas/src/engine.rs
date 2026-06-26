@@ -1,6 +1,6 @@
 use std::{cell::RefCell, sync::Arc};
 
-use winit::{dpi::PhysicalSize, keyboard::KeyCode, window::Window};
+use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
     app::AppConfig,
@@ -9,7 +9,7 @@ use crate::{
     ecs::{CommandQueue, Schedule, System, World},
     fps::FpsCounter,
     graphics::Graphics,
-    input::InputState,
+    input::{InputButton, InputState},
     pipeline::Pipeline,
 };
 
@@ -75,6 +75,9 @@ impl Engine {
 
         self.pipeline.update(&self.world);
         self.graphics.update(&self.pipeline, &self.world);
+
+        let mut input_state = self.world.resource_mut::<InputState>();
+        input_state.update();
     }
 
     pub(crate) fn render(&mut self) {
@@ -94,8 +97,8 @@ impl Engine {
         camera.resize(&self.graphics.surface_config);
     }
 
-    pub(crate) fn handle_key_press(&mut self, code: KeyCode, pressed: bool) {
-        let mut button_state = self.world.resource_mut::<InputState>();
-        button_state.upsert(code, pressed);
+    pub(crate) fn handle_input(&mut self, button: InputButton, pressed: bool) {
+        let mut input_state = self.world.resource_mut::<InputState>();
+        input_state.insert(button, pressed);
     }
 }

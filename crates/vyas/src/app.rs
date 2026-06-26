@@ -4,7 +4,7 @@ use winit::{
     application::ApplicationHandler,
     event::*,
     event_loop::{ActiveEventLoop, EventLoop},
-    keyboard::{KeyCode, PhysicalKey},
+    keyboard::PhysicalKey,
     window::Window,
 };
 
@@ -18,6 +18,7 @@ use crate::{
     config::RenderConfig,
     ecs::{IntoSystem, Schedule, System},
     engine::Engine,
+    input::InputButton,
 };
 
 pub struct App {
@@ -177,10 +178,12 @@ impl ApplicationHandler<Client> for App {
                         ..
                     },
                 ..
-            } => match (code, state.is_pressed()) {
-                (KeyCode::Escape, true) => event_loop.exit(),
-                (code, is_pressed) => client.handle_key_press(code, is_pressed),
-            },
+            } => {
+                client.handle_input(code.into(), state.is_pressed());
+            }
+            WindowEvent::MouseInput { button, state, .. } => {
+                client.handle_input(button.into(), state.is_pressed());
+            }
             _ => {}
         }
     }
@@ -214,7 +217,7 @@ impl Client {
         self.engine.resize(new_size);
     }
 
-    fn handle_key_press(&mut self, code: KeyCode, pressed: bool) {
-        self.engine.handle_key_press(code, pressed);
+    fn handle_input(&mut self, button: InputButton, pressed: bool) {
+        self.engine.handle_input(button, pressed);
     }
 }
