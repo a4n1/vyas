@@ -70,21 +70,7 @@ impl Pipeline {
                 label: Some("camera_bind_group"),
             });
 
-        let depth_texture = graphics.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Depth Texture"),
-            size: wgpu::Extent3d {
-                width: graphics.surface_config.width,
-                height: graphics.surface_config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth24Plus,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-
+        let depth_texture = Self::create_depth_texture(graphics);
         let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let render_pipeline_layout =
@@ -178,11 +164,19 @@ impl Pipeline {
     }
 
     pub(crate) fn resize(&mut self, graphics: &Graphics) {
-        self.depth_texture = graphics.device.create_texture(&wgpu::TextureDescriptor {
+        self.depth_texture = Self::create_depth_texture(graphics);
+
+        self.depth_view = self
+            .depth_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+    }
+
+    fn create_depth_texture(graphics: &Graphics) -> wgpu::Texture {
+        graphics.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Depth Texture"),
             size: wgpu::Extent3d {
-                width: graphics.surface_config.width,
-                height: graphics.surface_config.height,
+                width: graphics.surface_config.width.max(1),
+                height: graphics.surface_config.height.max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -191,10 +185,6 @@ impl Pipeline {
             format: wgpu::TextureFormat::Depth24Plus,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
-        });
-
-        self.depth_view = self
-            .depth_texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        })
     }
 }

@@ -22,6 +22,9 @@ use crate::{
     input::InputButton,
 };
 
+#[cfg(target_arch = "wasm32")]
+const CANVAS_ID: &str = "vyas";
+
 pub struct App {
     #[cfg(target_arch = "wasm32")]
     proxy: Option<winit::event_loop::EventLoopProxy<Client>>,
@@ -107,8 +110,6 @@ impl ApplicationHandler<Client> for App {
         {
             use wasm_bindgen::JsCast;
             use winit::platform::web::WindowAttributesExtWebSys;
-
-            const CANVAS_ID: &str = "canvas";
 
             let window = wgpu::web_sys::window().unwrap_throw();
             let document = window.document().unwrap_throw();

@@ -10,7 +10,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
         fenixPkgs = fenix.packages.${system};
-        f = with fenixPkgs; combine [
+        rustToolchain = with fenixPkgs; combine [
           latest.toolchain
           targets.wasm32-unknown-unknown.latest.rust-std
           rust-analyzer
@@ -19,10 +19,12 @@
       {
         devShell = with pkgs; mkShell {
           buildInputs = [
-            f
+            rustToolchain
             wasm-pack
             openssl
-            caddy
+            nodejs_24
+            corepack
+            typescript-language-server
           ];
           shellHook = ''
             export RUST_SRC_PATH="${fenixPkgs.latest.rust-src}/lib/rustlib/src/rust/src"
