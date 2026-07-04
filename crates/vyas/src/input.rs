@@ -18,6 +18,8 @@ pub type MouseButton = winit::event::MouseButton;
 
 pub type MousePosition = PhysicalPosition<f64>;
 
+pub type ScrollDelta = winit::event::MouseScrollDelta;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputButton {
     Key(KeyCode),
@@ -42,11 +44,17 @@ pub struct InputState {
     just_pressed: HashSet<InputButton>,
     mouse_position: MousePosition,
     voxel_hit: Option<VoxelHit>,
+    scroll_delta: Option<ScrollDelta>,
 }
 
 impl InputState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn update(&mut self) {
+        self.just_pressed.clear();
+        self.scroll_delta = None;
     }
 
     pub(crate) fn insert_pressed(&mut self, input_button: InputButton, pressed: bool) {
@@ -55,6 +63,14 @@ impl InputState {
         }
 
         self.pressed.insert(input_button, pressed);
+    }
+
+    pub fn pressed(&self, input_button: InputButton) -> bool {
+        self.pressed.get(&input_button).is_some_and(|v| *v)
+    }
+
+    pub fn just_pressed(&self, input_button: InputButton) -> bool {
+        self.just_pressed.contains(&input_button)
     }
 
     pub(crate) fn set_mouse_position(
@@ -74,20 +90,16 @@ impl InputState {
         self.mouse_position
     }
 
-    pub fn update(&mut self) {
-        self.just_pressed.clear();
+    pub(crate) fn set_scroll_delta(&mut self, delta: ScrollDelta) {
+        self.scroll_delta = Some(delta);
     }
 
-    pub fn pressed(&self, input_button: InputButton) -> bool {
-        self.pressed.get(&input_button).is_some_and(|v| *v)
+    pub fn scroll_delta(&self) -> &Option<ScrollDelta> {
+        &self.scroll_delta
     }
 
-    pub fn just_pressed(&self, input_button: InputButton) -> bool {
-        self.just_pressed.contains(&input_button)
-    }
-
-    pub fn voxel_hit(&self) -> Option<VoxelHit> {
-        self.voxel_hit.clone()
+    pub fn voxel_hit(&self) -> &Option<VoxelHit> {
+        &self.voxel_hit
     }
 
     fn ray_from_cursor(

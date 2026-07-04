@@ -189,6 +189,9 @@ impl ApplicationHandler<Client> for App {
             WindowEvent::CursorMoved { position, .. } => {
                 client.handle_mouse_move(position);
             }
+            WindowEvent::MouseWheel { delta, .. } => {
+                client.handle_mouse_scroll(delta);
+            }
             _ => {}
         }
     }
@@ -228,5 +231,9 @@ impl Client {
 
     fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {
         self.engine.handle_mouse_move(position);
+    }
+
+    fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
+        self.engine.handle_mouse_scroll(delta);
     }
 }

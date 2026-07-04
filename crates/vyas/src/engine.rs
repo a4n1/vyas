@@ -2,6 +2,7 @@ use std::{cell::RefCell, sync::Arc};
 
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
+    event::MouseScrollDelta,
     window::Window,
 };
 
@@ -89,11 +90,12 @@ impl Engine {
     }
 
     pub(crate) fn resize(&mut self, size: PhysicalSize<u32>) {
+        self.graphics.resize(size);
+
         if size.width == 0 || size.height == 0 {
             return;
         }
 
-        self.graphics.resize(size);
         self.pipeline.resize(&self.graphics);
 
         let mut camera = self.world.resource_mut::<CameraState>();
@@ -108,5 +110,10 @@ impl Engine {
     pub(crate) fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {
         let mut input_state = self.world.resource_mut::<InputState>();
         input_state.set_mouse_position(position, &self.world, &self.graphics.surface_config);
+    }
+
+    pub(crate) fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
+        let mut input_state = self.world.resource_mut::<InputState>();
+        input_state.set_scroll_delta(delta);
     }
 }

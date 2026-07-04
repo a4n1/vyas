@@ -148,6 +148,10 @@ impl Graphics {
     }
 
     pub(crate) fn render(&mut self, pipeline: &Pipeline) {
+        if self.surface_config.width == 0 && self.surface_config.height == 0 {
+            return;
+        }
+
         if !self.state.is_surface_configured {
             self.surface.configure(&self.device, &self.surface_config);
             self.state.is_surface_configured = true;
@@ -165,7 +169,7 @@ impl Graphics {
                 return;
             }
             wgpu::CurrentSurfaceTexture::Outdated => {
-                self.surface.configure(&self.device, &self.surface_config);
+                self.state.is_surface_configured = false;
                 return;
             }
             wgpu::CurrentSurfaceTexture::Lost => {
@@ -191,9 +195,9 @@ impl Graphics {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.3,
+                        r: 0.01,
+                        g: 0.01,
+                        b: 0.01,
                         a: 1.0,
                     }),
                     store: wgpu::StoreOp::Store,
