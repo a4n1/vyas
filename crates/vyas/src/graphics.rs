@@ -103,10 +103,16 @@ impl Graphics {
     }
 
     pub(crate) fn resize(&mut self, PhysicalSize { width, height }: PhysicalSize<u32>) {
+        if self.surface_config.width == width
+            && self.surface_config.height == height
+            && self.state.is_surface_configured
+        {
+            return;
+        }
+
         self.surface_config.width = width;
         self.surface_config.height = height;
-        self.surface.configure(&self.device, &self.surface_config);
-        self.state.is_surface_configured = true;
+        self.state.is_surface_configured = false;
     }
 
     pub(crate) fn update(&mut self, pipeline: &Pipeline, world: &World) {
@@ -141,15 +147,16 @@ impl Graphics {
         );
     }
 
-    pub(crate) fn render(&self, pipeline: &Pipeline) {
+    pub(crate) fn render(&mut self, pipeline: &Pipeline) {
         if !self.state.is_surface_configured {
-            return;
+            self.surface.configure(&self.device, &self.surface_config);
+            self.state.is_surface_configured = true;
         }
 
         let output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
             wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => {
-                self.surface.configure(&self.device, &self.surface_config);
+                self.state.is_surface_configured = false;
                 surface_texture
             }
             wgpu::CurrentSurfaceTexture::Timeout
