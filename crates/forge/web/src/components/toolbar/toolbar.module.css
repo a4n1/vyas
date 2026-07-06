@@ -1,0 +1,22 @@
+.root {
+  position: absolute;
+  height: 48px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, calc(50vh - 50px - 40px));
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  backdrop-filter: blur(16px);
+  border: 0.5px solid #191919;
+  box-shadow:
+    rgba(0, 0, 0, 0.35) 0px 3px 8px 0px,
+    rgba(0, 0, 0, 0.5) 0px 1px 3px 0px,
+    rgba(255, 255, 255, 0.08) 0px 0.5px 0px 0px inset,
+    rgba(255, 255, 255, 0.3) 0px 0px 0.5px 0px inset;
+
+  display: grid;
+  grid-auto-flow: column;
+  gap: 16px;
+  align-items: center;
+  padding: 0 8px;
+}

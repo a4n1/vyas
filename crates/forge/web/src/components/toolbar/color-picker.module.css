@@ -1,0 +1,140 @@
+.root {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.trigger {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #fff;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow:
+    rgba(0, 0, 0, 0.35) 0 1px 2px,
+    rgba(255, 255, 255, 0.2) 0 0.5px 0 inset;
+  transition:
+    border-color 0.1s,
+    filter 0.1s;
+}
+
+.trigger:hover,
+.trigger[aria-expanded="true"] {
+  filter: brightness(1.4);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.82);
+  outline-offset: 2px;
+}
+
+.triggerSwatch {
+  position: absolute;
+  inset: 0;
+}
+
+.positioner {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.content {
+  width: 224px;
+  padding: 10px;
+  border: 0.5px solid #2b2b2b;
+  border-radius: 8px;
+  background: rgba(18, 18, 18, 0.94);
+  box-shadow:
+    rgba(0, 0, 0, 0.4) 0 12px 26px,
+    rgba(255, 255, 255, 0.08) 0 0.5px 0 inset;
+  backdrop-filter: blur(16px);
+}
+
+.area {
+  position: relative;
+  height: 136px;
+  overflow: hidden;
+  border-radius: 6px;
+  background:
+    linear-gradient(0deg, #000, transparent),
+    linear-gradient(90deg, #fff, transparent), var(--hue-color);
+  touch-action: none;
+}
+
+.areaThumb,
+.sliderThumb {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  box-shadow:
+    rgba(0, 0, 0, 0.55) 0 1px 3px,
+    rgba(0, 0, 0, 0.8) 0 0 0 1px;
+  pointer-events: none;
+}
+
+.areaThumb {
+  transform: translate(-50%, -50%);
+}
+
+.slider {
+  position: relative;
+  height: 14px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  touch-action: none;
+}
+
+.hueTrack {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    hsl(0deg 100% 50%),
+    hsl(60deg 100% 50%),
+    hsl(120deg 100% 50%),
+    hsl(180deg 100% 50%),
+    hsl(240deg 100% 50%),
+    hsl(300deg 100% 50%),
+    hsl(360deg 100% 50%)
+  );
+}
+
+.sliderThumb {
+  z-index: 2;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.inputRow {
+  margin-top: 10px;
+}
+
+.hexInput {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  box-sizing: border-box;
+  border: 1px solid #363636;
+  border-radius: 4px;
+  background: #0d0d0d;
+  color: #f3f3f3;
+  font:
+    500 13px/1 system-ui,
+    sans-serif;
+  outline: none;
+  padding: 0 8px;
+}
+
+.hexInput:focus {
+  border-color: rgba(255, 255, 255, 0.58);
+}

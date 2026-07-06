@@ -1,9 +1,11 @@
-import { clientOnly } from "@solidjs/start";
+import { Canvas } from "~/components/canvas";
+import { Toolbar } from "~/components/toolbar";
 
 export default function Home() {
-  return <Canvas />;
+  return (
+    <div>
+      <Canvas />
+      <Toolbar />
+    </div>
+  );
 }
-
-const Canvas = clientOnly(() => import("~/components/canvas"), {
-  lazy: false,
-});

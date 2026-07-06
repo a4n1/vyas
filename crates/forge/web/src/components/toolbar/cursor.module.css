@@ -1,0 +1,22 @@
+.root {
+  display: grid;
+  height: 32px;
+  width: 32px;
+  align-items: center;
+  justify-items: center;
+
+  background-color: #3a3a4e;
+  border-radius: 4px;
+  transition: background-color 0.1s;
+
+  border: none;
+}
+
+.root:hover {
+  background-color: #595973;
+}
+
+.icon {
+  height: 16px;
+  width: 16px;
+}

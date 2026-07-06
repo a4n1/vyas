@@ -44,7 +44,7 @@ fn build_voxel(
     voxels: &HashMap<GridPosition, Voxel>,
     render_config: &RenderConfig,
 ) -> (Vec<Vertex>, Vec<u32>) {
-    let color = [voxel.color.r(), voxel.color.g(), voxel.color.b()];
+    let color = voxel.color.linear_rgb();
 
     let half_size = render_config.voxel_size * 0.5;
 

@@ -21,6 +21,24 @@ impl Color {
             Color::Srgb(srgb) => srgb.b,
         }
     }
+
+    pub(crate) fn linear_rgb(&self) -> [f32; 3] {
+        match self {
+            Color::Srgb(srgb) => [
+                Self::srgb_component_to_linear(srgb.r),
+                Self::srgb_component_to_linear(srgb.g),
+                Self::srgb_component_to_linear(srgb.b),
+            ],
+        }
+    }
+
+    fn srgb_component_to_linear(value: f32) -> f32 {
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

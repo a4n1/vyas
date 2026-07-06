@@ -1,18 +1,15 @@
+use std::sync::{LazyLock, Mutex};
+
 use vyas::prelude::*;
 
-#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn web() {
-    console_error_panic_hook::set_once();
-    run();
-}
 
 const GRID_SIZE: i32 = 64;
 
-pub fn run() {
+#[wasm_bindgen]
+pub fn init() {
+    console_error_panic_hook::set_once();
+
     App::new()
         .set_camera(CameraConfig {
             position: WorldPosition {
@@ -36,6 +33,46 @@ pub fn run() {
         .run();
 }
 
+static STATE: LazyLock<Mutex<State>> = LazyLock::new(|| {
+    Mutex::new(State {
+        color: VoxelColor(0x000000).into(),
+    })
+});
+
+#[derive(Clone, Copy)]
+struct VoxelColor(u32);
+
+struct State {
+    color: VoxelColor,
+}
+
+impl From<VoxelColor> for Color {
+    fn from(value: VoxelColor) -> Self {
+        let r = ((value.0 >> 16) & 0xFF) as u8;
+        let g = ((value.0 >> 8) & 0xFF) as u8;
+        let b = (value.0 & 0xFF) as u8;
+
+        Color::Srgb(Srgb {
+            r: r as f32 / 255.0,
+            g: g as f32 / 255.0,
+            b: b as f32 / 255.0,
+            a: 1.0,
+        })
+    }
+}
+
+impl From<Color> for VoxelColor {
+    fn from(value: Color) -> Self {
+        let r = (value.r() * 255.0) as u32;
+        let g = (value.g() * 255.0) as u32;
+        let b = (value.b() * 255.0) as u32;
+
+        let color = ((r << 16) | (g << 8) | b) as u32;
+
+        VoxelColor(color)
+    }
+}
+
 fn draw_scene(mut voxel: VoxelCommands) {
     for i in (-GRID_SIZE / 2)..(GRID_SIZE / 2) {
         for j in (-GRID_SIZE / 2)..(GRID_SIZE / 2) {
@@ -43,9 +80,9 @@ fn draw_scene(mut voxel: VoxelCommands) {
                 GridPosition { x: i, y: 0, z: j },
                 Voxel {
                     color: Color::Srgb(Srgb {
-                        r: 0.3,
-                        g: 0.3,
-                        b: 0.3,
+                        r: 0.5,
+                        g: 0.5,
+                        b: 0.5,
                         a: 1.0,
                     }),
                 },
@@ -198,6 +235,13 @@ fn update_camera_position(mut camera: Camera, input: Input) {
     camera.looking_at.z += delta_z;
 }
 
+#[wasm_bindgen]
+pub fn set_color(color: u32) {
+    if let Ok(mut lock) = STATE.lock() {
+        lock.color = VoxelColor(color);
+    }
+}
+
 fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
     if !input.just_pressed(InputButton::Mouse(MouseButton::Left)) {
         return;
@@ -207,15 +251,14 @@ fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
         return;
     };
 
+    let Ok(lock) = STATE.lock() else {
+        return;
+    };
+
     voxels.spawn(
         hit.position.adjacent(hit.face),
         Voxel {
-            color: Color::Srgb(Srgb {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            }),
+            color: lock.color.into(),
         },
     );
 }

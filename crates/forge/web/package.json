@@ -17,6 +17,10 @@
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0"
   },
+  "devDependencies": {
+    "@ianvs/prettier-plugin-sort-imports": "^4.4.2",
+    "prettier": "^3.6.2"
+  },
   "engines": {
     "node": ">=22"
   }
