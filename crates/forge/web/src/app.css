@@ -5,6 +5,8 @@ body {
   cursor:
     url("/cursor.svg") 0 0,
     auto;
+  font-family: system-ui, sans-serif;
+  user-select: none;
 }
 
 button {

@@ -127,10 +127,9 @@
   border: 1px solid #363636;
   border-radius: 4px;
   background: #0d0d0d;
+  font-weight: 500;
+  font-size: 13px;
   color: #f3f3f3;
-  font:
-    500 13px/1 system-ui,
-    sans-serif;
   outline: none;
   padding: 0 8px;
 }

@@ -24,6 +24,7 @@ pub mod prelude {
     pub use crate::camera::*;
     pub use crate::color::*;
     pub use crate::config::*;
+    pub use crate::dda::*;
     pub use crate::ecs::*;
     pub use crate::input::*;
     pub use crate::position::*;

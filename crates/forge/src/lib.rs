@@ -29,8 +29,7 @@ pub fn init() {
         .add_systems(Update, update_camera_pitch)
         .add_systems(Update, update_camera_zoom)
         .add_systems(Update, update_camera_position)
-        .add_systems(Update, insert_voxel)
-        .add_systems(Update, remove_voxel)
+        .add_systems(Update, edit_voxel)
         .run();
 }
 
@@ -38,6 +37,7 @@ static STATE: LazyLock<Mutex<State>> = LazyLock::new(|| {
     Mutex::new(State {
         color: VoxelColor(0x000000).into(),
         insert_plane: None,
+        cursor_mode: CursorMode::Insert,
     })
 });
 
@@ -47,9 +47,16 @@ struct VoxelColor(u32);
 #[derive(Clone, Copy)]
 struct InsertPlane(i32);
 
+#[wasm_bindgen]
+pub enum CursorMode {
+    Insert,
+    Remove,
+}
+
 struct State {
     color: VoxelColor,
     insert_plane: Option<InsertPlane>,
+    cursor_mode: CursorMode,
 }
 
 impl From<VoxelColor> for Color {
@@ -242,7 +249,14 @@ pub fn set_color(color: u32) {
     }
 }
 
-fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
+#[wasm_bindgen]
+pub fn set_cursor_mode(cursor_mode: CursorMode) {
+    if let Ok(mut lock) = STATE.lock() {
+        lock.cursor_mode = cursor_mode;
+    }
+}
+
+fn edit_voxel(input: Input, voxels: VoxelCommands) {
     let Ok(mut lock) = STATE.lock() else {
         log::warn!("failed to take state lock");
         return;
@@ -257,13 +271,25 @@ fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
         return;
     };
 
+    match lock.cursor_mode {
+        CursorMode::Insert => insert_voxel(hit, lock.color, &mut lock.insert_plane, voxels),
+        CursorMode::Remove => remove_voxel(hit, voxels),
+    }
+}
+
+fn insert_voxel(
+    hit: &VoxelHit,
+    color: VoxelColor,
+    insert_plane: &mut Option<InsertPlane>,
+    mut voxels: VoxelCommands,
+) {
     let position = hit.position.adjacent(hit.face);
 
     if position.y < 0 || position.y >= GRID_SIZE {
         return;
     }
 
-    if let Some(insert_plane) = lock.insert_plane
+    if let Some(insert_plane) = insert_plane
         && insert_plane.0 != position.y
     {
         return;
@@ -277,25 +303,17 @@ fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
         return;
     }
 
-    lock.insert_plane = Some(InsertPlane(position.y));
+    *insert_plane = Some(InsertPlane(position.y));
 
     voxels.spawn(
         position,
         Voxel {
-            color: lock.color.into(),
+            color: color.into(),
         },
     );
 }
 
-fn remove_voxel(input: Input, mut voxels: VoxelCommands) {
-    if !input.pressed(InputButton::Mouse(MouseButton::Right)) {
-        return;
-    }
-
-    let Some(hit) = input.voxel_hit() else {
-        return;
-    };
-
+fn remove_voxel(hit: &VoxelHit, mut voxels: VoxelCommands) {
     let position = hit.position.clone();
 
     if position.y < 0 || position.y >= GRID_SIZE {
