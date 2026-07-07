@@ -38,24 +38,9 @@ pub fn build_voxels(render_config: &RenderConfig) -> HashMap<GridPosition, Voxel
 
     let mut rng = rand::rng();
     let colors = [
-        Color::Srgb(Srgb {
-            r: 1.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        }),
-        Color::Srgb(Srgb {
-            r: 0.0,
-            g: 1.0,
-            b: 0.0,
-            a: 1.0,
-        }),
-        Color::Srgb(Srgb {
-            r: 0.0,
-            g: 0.0,
-            b: 1.0,
-            a: 1.0,
-        }),
+        Color::Srgb(Srgb { r: 255, g: 0, b: 0 }),
+        Color::Srgb(Srgb { r: 0, g: 255, b: 0 }),
+        Color::Srgb(Srgb { r: 0, g: 0, b: 255 }),
     ];
 
     for x in 0..chunk_size {

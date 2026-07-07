@@ -52,20 +52,15 @@ impl From<VoxelColor> for Color {
         let g = ((value.0 >> 8) & 0xFF) as u8;
         let b = (value.0 & 0xFF) as u8;
 
-        Color::Srgb(Srgb {
-            r: r as f32 / 255.0,
-            g: g as f32 / 255.0,
-            b: b as f32 / 255.0,
-            a: 1.0,
-        })
+        Color::Srgb(Srgb { r, g, b })
     }
 }
 
 impl From<Color> for VoxelColor {
     fn from(value: Color) -> Self {
-        let r = (value.r() * 255.0) as u32;
-        let g = (value.g() * 255.0) as u32;
-        let b = (value.b() * 255.0) as u32;
+        let r = value.r() as u32;
+        let g = value.g() as u32;
+        let b = value.b() as u32;
 
         let color = ((r << 16) | (g << 8) | b) as u32;
 
@@ -80,10 +75,9 @@ fn draw_scene(mut voxel: VoxelCommands) {
                 GridPosition { x: i, y: 0, z: j },
                 Voxel {
                     color: Color::Srgb(Srgb {
-                        r: 0.5,
-                        g: 0.5,
-                        b: 0.5,
-                        a: 1.0,
+                        r: 128,
+                        g: 128,
+                        b: 128,
                     }),
                 },
             );

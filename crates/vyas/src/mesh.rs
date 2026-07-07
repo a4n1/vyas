@@ -132,7 +132,7 @@ fn generate_quad(
     z: f32,
     half_size: f32,
     indices_index: u32,
-    color: [f32; 3],
+    color: u32,
 ) -> (Vec<Vertex>, Vec<u32>) {
     let corners = match direction {
         Direction::Front => [
