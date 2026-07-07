@@ -36,14 +36,19 @@ pub fn init() {
 static STATE: LazyLock<Mutex<State>> = LazyLock::new(|| {
     Mutex::new(State {
         color: VoxelColor(0x000000).into(),
+        insert_plane: None,
     })
 });
 
 #[derive(Clone, Copy)]
 struct VoxelColor(u32);
 
+#[derive(Clone, Copy)]
+struct InsertPlane(i32);
+
 struct State {
     color: VoxelColor,
+    insert_plane: Option<InsertPlane>,
 }
 
 impl From<VoxelColor> for Color {
@@ -237,7 +242,13 @@ pub fn set_color(color: u32) {
 }
 
 fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
-    if !input.just_pressed(InputButton::Mouse(MouseButton::Left)) {
+    let Ok(mut lock) = STATE.lock() else {
+        log::warn!("failed to take state lock");
+        return;
+    };
+
+    if !input.pressed(InputButton::Mouse(MouseButton::Left)) {
+        lock.insert_plane = None;
         return;
     }
 
@@ -251,6 +262,12 @@ fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
         return;
     }
 
+    if let Some(insert_plane) = lock.insert_plane
+        && insert_plane.0 != position.y
+    {
+        return;
+    }
+
     if position.x < -GRID_SIZE / 2 || position.x >= GRID_SIZE / 2 {
         return;
     }
@@ -259,10 +276,7 @@ fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
         return;
     }
 
-    let Ok(lock) = STATE.lock() else {
-        log::warn!("failed to take state lock");
-        return;
-    };
+    lock.insert_plane = Some(InsertPlane(position.y));
 
     voxels.spawn(
         position,
