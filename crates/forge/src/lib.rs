@@ -72,7 +72,7 @@ fn draw_scene(mut voxel: VoxelCommands) {
     for i in (-GRID_SIZE / 2)..(GRID_SIZE / 2) {
         for j in (-GRID_SIZE / 2)..(GRID_SIZE / 2) {
             voxel.spawn(
-                GridPosition { x: i, y: 0, z: j },
+                GridPosition { x: i, y: -1, z: j },
                 Voxel {
                     color: Color::Srgb(Srgb {
                         r: 128,
@@ -245,12 +245,27 @@ fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
         return;
     };
 
+    let position = hit.position.adjacent(hit.face);
+
+    if position.y < 0 || position.y >= GRID_SIZE {
+        return;
+    }
+
+    if position.x < -GRID_SIZE / 2 || position.x >= GRID_SIZE / 2 {
+        return;
+    }
+
+    if position.z < -GRID_SIZE / 2 || position.z >= GRID_SIZE / 2 {
+        return;
+    }
+
     let Ok(lock) = STATE.lock() else {
+        log::warn!("failed to take state lock");
         return;
     };
 
     voxels.spawn(
-        hit.position.adjacent(hit.face),
+        position,
         Voxel {
             color: lock.color.into(),
         },
