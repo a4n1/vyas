@@ -51,6 +51,11 @@ impl Chunk {
         self.dirty = true;
     }
 
+    pub(crate) fn remove_voxel(&mut self, position: &GridPosition) {
+        self.voxels.remove(position);
+        self.dirty = true;
+    }
+
     pub(crate) fn contains(&self, position: &GridPosition) -> bool {
         self.voxels.contains_key(position)
     }

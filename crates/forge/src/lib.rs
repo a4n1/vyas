@@ -30,6 +30,7 @@ pub fn init() {
         .add_systems(Update, update_camera_zoom)
         .add_systems(Update, update_camera_position)
         .add_systems(Update, insert_voxel)
+        .add_systems(Update, remove_voxel)
         .run();
 }
 
@@ -284,4 +285,30 @@ fn insert_voxel(input: Input, mut voxels: VoxelCommands) {
             color: lock.color.into(),
         },
     );
+}
+
+fn remove_voxel(input: Input, mut voxels: VoxelCommands) {
+    if !input.pressed(InputButton::Mouse(MouseButton::Right)) {
+        return;
+    }
+
+    let Some(hit) = input.voxel_hit() else {
+        return;
+    };
+
+    let position = hit.position.clone();
+
+    if position.y < 0 || position.y >= GRID_SIZE {
+        return;
+    }
+
+    if position.x < -GRID_SIZE / 2 || position.x >= GRID_SIZE / 2 {
+        return;
+    }
+
+    if position.z < -GRID_SIZE / 2 || position.z >= GRID_SIZE / 2 {
+        return;
+    }
+
+    voxels.despawn(position);
 }

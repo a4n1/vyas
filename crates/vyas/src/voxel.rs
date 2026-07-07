@@ -45,6 +45,27 @@ impl VoxelCommands {
             }
         }));
     }
+
+    pub fn despawn(&mut self, voxel_position: GridPosition) {
+        let queue = unsafe { &*self.queue };
+        queue.borrow_mut().push(Box::new(move |world| {
+            let render_config = *world.resource::<RenderConfig>();
+            let chunk_position = voxel_position.to_chunk_position(&render_config);
+            let local_position = voxel_position.to_local_position(&render_config);
+
+            let entity = {
+                let chunk_map = world.resource::<ChunkMap>();
+                chunk_map.get(&chunk_position).copied()
+            };
+
+            if let Some(entity) = entity {
+                let mut chunk = world
+                    .get_mut::<Chunk>(entity)
+                    .expect("failed to get chunk entity");
+                chunk.remove_voxel(&local_position);
+            }
+        }));
+    }
 }
 
 impl SystemParam for VoxelCommands {
