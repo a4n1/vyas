@@ -1,7 +1,8 @@
 use crate::config::RenderConfig;
 use glam::{Vec3, Vec3A};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Clone, Eq, Hash, PartialEq)]
+#[derive(Debug, Default, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct GridPosition {
     pub x: i32,
     pub y: i32,

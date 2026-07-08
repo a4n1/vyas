@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     chunk::{Chunk, ChunkMap},
     color::Color,
@@ -6,6 +8,7 @@ use crate::{
     position::GridPosition,
 };
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Voxel {
     pub color: Color,
 }

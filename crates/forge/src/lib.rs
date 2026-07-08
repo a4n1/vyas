@@ -1,4 +1,7 @@
-use std::sync::{LazyLock, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex, MutexGuard},
+};
 
 use vyas::prelude::*;
 
@@ -38,8 +41,18 @@ static STATE: LazyLock<Mutex<State>> = LazyLock::new(|| {
         color: VoxelColor(0x000000).into(),
         insert_plane: None,
         cursor_mode: CursorMode::Insert,
+        grid: HashMap::new(),
     })
 });
+
+struct State {
+    color: VoxelColor,
+    insert_plane: Option<InsertPlane>,
+    cursor_mode: CursorMode,
+    grid: Grid,
+}
+
+type StateLock<'a> = MutexGuard<'a, State>;
 
 #[derive(Clone, Copy)]
 struct VoxelColor(u32);
@@ -53,11 +66,7 @@ pub enum CursorMode {
     Remove,
 }
 
-struct State {
-    color: VoxelColor,
-    insert_plane: Option<InsertPlane>,
-    cursor_mode: CursorMode,
-}
+type Grid = HashMap<GridPosition, Voxel>;
 
 impl From<VoxelColor> for Color {
     fn from(value: VoxelColor) -> Self {
@@ -242,20 +251,6 @@ fn update_camera_position(mut camera: Camera, input: Input) {
     camera.looking_at.z += delta_z;
 }
 
-#[wasm_bindgen]
-pub fn set_color(color: u32) {
-    if let Ok(mut lock) = STATE.lock() {
-        lock.color = VoxelColor(color);
-    }
-}
-
-#[wasm_bindgen]
-pub fn set_cursor_mode(cursor_mode: CursorMode) {
-    if let Ok(mut lock) = STATE.lock() {
-        lock.cursor_mode = cursor_mode;
-    }
-}
-
 fn edit_voxel(input: Input, voxels: VoxelCommands) {
     let Ok(mut lock) = STATE.lock() else {
         log::warn!("failed to take state lock");
@@ -272,24 +267,19 @@ fn edit_voxel(input: Input, voxels: VoxelCommands) {
     };
 
     match lock.cursor_mode {
-        CursorMode::Insert => insert_voxel(hit, lock.color, &mut lock.insert_plane, voxels),
-        CursorMode::Remove => remove_voxel(hit, voxels),
+        CursorMode::Insert => insert_voxel(hit, lock, voxels),
+        CursorMode::Remove => remove_voxel(hit, lock, voxels),
     }
 }
 
-fn insert_voxel(
-    hit: &VoxelHit,
-    color: VoxelColor,
-    insert_plane: &mut Option<InsertPlane>,
-    mut voxels: VoxelCommands,
-) {
+fn insert_voxel(hit: &VoxelHit, mut state: StateLock, mut voxels: VoxelCommands) {
     let position = hit.position.adjacent(hit.face);
 
     if position.y < 0 || position.y >= GRID_SIZE {
         return;
     }
 
-    if let Some(insert_plane) = insert_plane
+    if let Some(insert_plane) = state.insert_plane
         && insert_plane.0 != position.y
     {
         return;
@@ -303,17 +293,17 @@ fn insert_voxel(
         return;
     }
 
-    *insert_plane = Some(InsertPlane(position.y));
+    state.insert_plane = Some(InsertPlane(position.y));
 
-    voxels.spawn(
-        position,
-        Voxel {
-            color: color.into(),
-        },
-    );
+    let voxel = Voxel {
+        color: state.color.into(),
+    };
+
+    voxels.spawn(position.clone(), voxel.clone());
+    state.grid.insert(position, voxel);
 }
 
-fn remove_voxel(hit: &VoxelHit, mut voxels: VoxelCommands) {
+fn remove_voxel(hit: &VoxelHit, mut state: StateLock, mut voxels: VoxelCommands) {
     let position = hit.position.clone();
 
     if position.y < 0 || position.y >= GRID_SIZE {
@@ -328,5 +318,61 @@ fn remove_voxel(hit: &VoxelHit, mut voxels: VoxelCommands) {
         return;
     }
 
-    voxels.despawn(position);
+    voxels.despawn(position.clone());
+    state.grid.remove(&position);
+}
+
+#[wasm_bindgen]
+pub fn set_color(color: u32) {
+    let Ok(mut lock) = STATE.lock() else {
+        log::error!("failed to take state lock");
+        return;
+    };
+
+    lock.color = VoxelColor(color);
+}
+
+#[wasm_bindgen]
+pub fn set_cursor_mode(cursor_mode: CursorMode) {
+    let Ok(mut lock) = STATE.lock() else {
+        log::error!("failed to take state lock");
+        return;
+    };
+
+    lock.cursor_mode = cursor_mode;
+}
+
+#[wasm_bindgen]
+pub fn export_grid() -> Option<JsValue> {
+    let Ok(lock) = STATE.lock() else {
+        log::error!("failed to take state lock");
+        return None;
+    };
+
+    let grid = normalize_grid(&lock.grid);
+
+    let serialized_result = match serde_wasm_bindgen::to_value(&grid) {
+        Ok(result) => Some(result),
+        Err(e) => {
+            log::error!("failed to serialize result: {e:#?}");
+            None
+        }
+    };
+
+    serialized_result
+}
+
+fn normalize_grid(grid: &Grid) -> Grid {
+    HashMap::from_iter(
+        grid.iter()
+            .map(|(position, voxel)| {
+                let position = GridPosition {
+                    x: position.x + GRID_SIZE / 2,
+                    y: position.y,
+                    z: position.z + GRID_SIZE / 2,
+                };
+                (position, voxel.clone())
+            })
+            .collect::<Vec<(GridPosition, Voxel)>>(),
+    )
 }

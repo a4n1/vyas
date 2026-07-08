@@ -1,11 +1,23 @@
 import { CursorMode } from "~/pkg/forge";
 import { store } from "~/store";
-import { createSignal } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import styles from "./cursor.module.css";
 
 export function Cursor() {
+  let rootRef: HTMLDivElement | undefined;
   const [isSelectVisible, setIsSelectVisible] = createSignal(false);
   const { cursorMode, setCursorMode } = store;
+
+  onMount(() => {
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (!rootRef?.contains(event.target as Node)) {
+        setIsSelectVisible(false);
+      }
+    };
+
+    document.addEventListener("click", handleDocumentClick);
+    onCleanup(() => document.removeEventListener("click", handleDocumentClick));
+  });
 
   const handleSelectCursorMode = (mode: CursorMode) => {
     setIsSelectVisible(false);
@@ -13,7 +25,7 @@ export function Cursor() {
   };
 
   return (
-    <div>
+    <div ref={rootRef}>
       <div class={styles.select} hidden={!isSelectVisible()}>
         <button
           class={styles.inputGroup}
