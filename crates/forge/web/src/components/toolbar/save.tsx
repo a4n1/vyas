@@ -1,13 +1,20 @@
-import * as vyas from "~/pkg/forge";
+import { store } from "~/store";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import styles from "./save.module.css";
 
 export function Save() {
-  let rootRef: HTMLDivElement | undefined;
+  const { forge } = store;
+
   const [isSelectVisible, setIsSelectVisible] = createSignal(false);
 
+  let rootRef: HTMLDivElement | undefined;
+
   const handleSave = () => {
-    const grid: Grid = vyas.export_grid();
+    const grid: Grid | undefined = forge()?.export_grid();
+    if (!grid) {
+      return;
+    }
+
     saveGrid(grid);
   };
 

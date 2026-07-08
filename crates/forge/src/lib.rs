@@ -10,35 +10,100 @@ use wasm_bindgen::prelude::*;
 const GRID_SIZE: i32 = 64;
 
 #[wasm_bindgen]
-pub fn init() {
-    console_error_panic_hook::set_once();
+pub struct Forge {
+    client: SharedClient,
+}
 
-    App::new()
-        .set_camera(CameraConfig {
-            position: WorldPosition {
-                x: -120.0,
-                y: 240.0,
-                z: -120.0,
-            },
-            looking_at: WorldPosition {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            fov: 45.0,
-        })
-        .add_systems(Startup, draw_scene)
-        .add_systems(Update, update_camera_yaw)
-        .add_systems(Update, update_camera_pitch)
-        .add_systems(Update, update_camera_zoom)
-        .add_systems(Update, update_camera_position)
-        .add_systems(Update, edit_voxel)
-        .run();
+#[wasm_bindgen]
+impl Forge {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        console_error_panic_hook::set_once();
+
+        let client = SharedClient::new();
+
+        App::new()
+            .set_client(Some(client.clone()))
+            .set_camera(CameraConfig {
+                position: WorldPosition {
+                    x: -120.0,
+                    y: 240.0,
+                    z: -120.0,
+                },
+                looking_at: WorldPosition {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                fov: 45.0,
+            })
+            .add_systems(Startup, draw_scene)
+            .add_systems(Update, update_camera_yaw)
+            .add_systems(Update, update_camera_pitch)
+            .add_systems(Update, update_camera_zoom)
+            .add_systems(Update, update_camera_position)
+            .add_systems(Update, edit_voxel)
+            .run();
+
+        Self { client }
+    }
+
+    pub fn set_color(&self, color: u32) {
+        let Ok(mut state) = STATE.lock() else {
+            log::error!("failed to take state lock");
+            return;
+        };
+
+        state.color = VoxelColor(color);
+    }
+
+    pub fn set_cursor_mode(&self, cursor_mode: CursorMode) {
+        let Ok(mut state) = STATE.lock() else {
+            log::error!("failed to take state lock");
+            return;
+        };
+
+        state.cursor_mode = cursor_mode;
+    }
+
+    pub fn export_grid(&self) -> Option<JsValue> {
+        let Ok(state) = STATE.lock() else {
+            log::error!("failed to take state lock");
+            return None;
+        };
+
+        let grid = Self::normalize_grid(&state.grid);
+
+        let serialized_result = match serde_wasm_bindgen::to_value(&grid) {
+            Ok(result) => Some(result),
+            Err(e) => {
+                log::error!("failed to serialize result: {e:#?}");
+                None
+            }
+        };
+
+        serialized_result
+    }
+
+    fn normalize_grid(grid: &Grid) -> Grid {
+        HashMap::from_iter(
+            grid.iter()
+                .map(|(position, voxel)| {
+                    let position = GridPosition {
+                        x: position.x + GRID_SIZE / 2,
+                        y: position.y,
+                        z: position.z + GRID_SIZE / 2,
+                    };
+                    (position, voxel.clone())
+                })
+                .collect::<Vec<(GridPosition, Voxel)>>(),
+        )
+    }
 }
 
 static STATE: LazyLock<Mutex<State>> = LazyLock::new(|| {
     Mutex::new(State {
-        color: VoxelColor(0x000000).into(),
+        color: VoxelColor(0x000000),
         insert_plane: None,
         cursor_mode: CursorMode::Insert,
         grid: HashMap::new(),
@@ -320,59 +385,4 @@ fn remove_voxel(hit: &VoxelHit, mut state: StateLock, mut voxels: VoxelCommands)
 
     voxels.despawn(position.clone());
     state.grid.remove(&position);
-}
-
-#[wasm_bindgen]
-pub fn set_color(color: u32) {
-    let Ok(mut lock) = STATE.lock() else {
-        log::error!("failed to take state lock");
-        return;
-    };
-
-    lock.color = VoxelColor(color);
-}
-
-#[wasm_bindgen]
-pub fn set_cursor_mode(cursor_mode: CursorMode) {
-    let Ok(mut lock) = STATE.lock() else {
-        log::error!("failed to take state lock");
-        return;
-    };
-
-    lock.cursor_mode = cursor_mode;
-}
-
-#[wasm_bindgen]
-pub fn export_grid() -> Option<JsValue> {
-    let Ok(lock) = STATE.lock() else {
-        log::error!("failed to take state lock");
-        return None;
-    };
-
-    let grid = normalize_grid(&lock.grid);
-
-    let serialized_result = match serde_wasm_bindgen::to_value(&grid) {
-        Ok(result) => Some(result),
-        Err(e) => {
-            log::error!("failed to serialize result: {e:#?}");
-            None
-        }
-    };
-
-    serialized_result
-}
-
-fn normalize_grid(grid: &Grid) -> Grid {
-    HashMap::from_iter(
-        grid.iter()
-            .map(|(position, voxel)| {
-                let position = GridPosition {
-                    x: position.x + GRID_SIZE / 2,
-                    y: position.y,
-                    z: position.z + GRID_SIZE / 2,
-                };
-                (position, voxel.clone())
-            })
-            .collect::<Vec<(GridPosition, Voxel)>>(),
-    )
 }

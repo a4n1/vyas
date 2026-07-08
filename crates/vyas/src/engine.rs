@@ -10,7 +10,7 @@ use crate::{
     app::AppConfig,
     camera::CameraState,
     chunk::ChunkMap,
-    ecs::{CommandQueue, Schedule, System, World},
+    ecs::{CommandQueue, Res, ResMut, Resource, Schedule, System, World},
     fps::FpsCounter,
     graphics::Graphics,
     input::{InputButton, InputState},
@@ -32,6 +32,7 @@ impl Engine {
             camera_config,
             render_config,
             systems,
+            resources,
         } = app_config;
 
         let mut world = World::new();
@@ -39,6 +40,10 @@ impl Engine {
         world.insert_resource(CameraState::new(camera_config));
         world.insert_resource(render_config);
         world.insert_resource(ChunkMap::new());
+
+        for insert_resource in resources {
+            insert_resource(&mut world);
+        }
 
         let graphics = Graphics::new(window, &render_config).await;
         let pipeline = Pipeline::new(&graphics, &world);
@@ -115,5 +120,13 @@ impl Engine {
     pub(crate) fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
         let mut input_state = self.world.resource_mut::<InputState>();
         input_state.set_scroll_delta(delta);
+    }
+
+    pub(crate) fn resource<T: Resource>(&mut self) -> Res<'_, T> {
+        self.world.resource::<T>()
+    }
+
+    pub(crate) fn resource_mut<T: Resource>(&mut self) -> ResMut<'_, T> {
+        self.world.resource_mut::<T>()
     }
 }

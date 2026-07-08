@@ -4,6 +4,7 @@ pub mod bench_support;
 pub mod buffer;
 pub mod camera;
 pub mod chunk;
+pub mod client;
 pub mod color;
 pub mod config;
 pub mod dda;
@@ -22,6 +23,7 @@ pub mod voxel;
 pub mod prelude {
     pub use crate::app::*;
     pub use crate::camera::*;
+    pub use crate::client::*;
     pub use crate::color::*;
     pub use crate::config::*;
     pub use crate::dda::*;

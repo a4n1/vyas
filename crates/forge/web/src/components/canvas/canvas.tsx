@@ -5,19 +5,19 @@ import { createEffect, onMount } from "solid-js";
 import styles from "./canvas.module.css";
 
 export function Canvas() {
-  const { color, cursorMode } = store;
+  const { color, cursorMode, forge, setForge } = store;
 
   onMount(async () => {
-    vyas.init();
+    setForge(new vyas.Forge());
   });
 
   createEffect(() => {
     const hex = hsvToHex(color());
-    vyas.set_color(hexColorToU32(hex));
+    forge()?.set_color(hexColorToU32(hex));
   });
 
   createEffect(() => {
-    vyas.set_cursor_mode(cursorMode());
+    forge()?.set_cursor_mode(cursorMode());
   });
 
   return <canvas id="vyas" class={styles.root} />;

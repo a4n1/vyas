@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalPosition,
     event::*,
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::PhysicalKey,
@@ -16,10 +15,9 @@ use winit::platform::web::EventLoopExtWebSys;
 
 use crate::{
     camera::CameraConfig,
+    client::{Client, SharedClient},
     config::RenderConfig,
-    ecs::{IntoSystem, Schedule, System},
-    engine::Engine,
-    input::InputButton,
+    ecs::{IntoSystem, Resource, Schedule, System, World},
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -28,7 +26,7 @@ const CANVAS_ID: &str = "vyas";
 pub struct App {
     #[cfg(target_arch = "wasm32")]
     proxy: Option<winit::event_loop::EventLoopProxy<Client>>,
-    client: Option<Client>,
+    client: SharedClient,
     config: Option<AppConfig>,
 }
 
@@ -37,6 +35,7 @@ pub(crate) struct AppConfig {
     pub(crate) camera_config: CameraConfig,
     pub(crate) render_config: RenderConfig,
     pub(crate) systems: Vec<(Schedule, Box<dyn System>)>,
+    pub(crate) resources: Vec<Box<dyn FnOnce(&mut World)>>,
 }
 
 impl Default for App {
@@ -44,7 +43,7 @@ impl Default for App {
         Self {
             #[cfg(target_arch = "wasm32")]
             proxy: None,
-            client: None,
+            client: SharedClient::new(),
             config: Some(AppConfig::default()),
         }
     }
@@ -53,6 +52,14 @@ impl Default for App {
 impl App {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_client(mut self, client: Option<SharedClient>) -> Self {
+        if let Some(client) = client {
+            self.client = client;
+        }
+
+        self
     }
 
     pub fn set_camera(mut self, camera_config: CameraConfig) -> Self {
@@ -64,6 +71,14 @@ impl App {
     pub fn set_render_config(mut self, render_config: RenderConfig) -> Self {
         let config = self.config.as_mut().expect("app config already taken");
         config.render_config = render_config;
+        self
+    }
+
+    pub fn insert_resource(mut self, resource: impl Resource) -> Self {
+        let config = self.config.as_mut().expect("app config already taken");
+        config
+            .resources
+            .push(Box::new(move |world| world.insert_resource(resource)));
         self
     }
 
@@ -128,7 +143,9 @@ impl ApplicationHandler<Client> for App {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            self.client = Some(pollster::block_on(Client::new(config, window)));
+            self.client
+                .set(pollster::block_on(Client::new(config, window)));
+            self.client.apply_commands();
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -148,7 +165,9 @@ impl ApplicationHandler<Client> for App {
             client.window().request_redraw();
             client.resize(client.window().inner_size());
         }
-        self.client = Some(client);
+
+        self.client.set(client);
+        self.client.apply_commands();
     }
 
     fn window_event(
@@ -157,12 +176,9 @@ impl ApplicationHandler<Client> for App {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        let client = match &mut self.client {
-            Some(client) => client,
-            None => return,
-        };
+        self.client.apply_commands();
 
-        match event {
+        self.client.with_mut(|client| match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 client.resize(size);
@@ -193,47 +209,6 @@ impl ApplicationHandler<Client> for App {
                 client.handle_mouse_scroll(delta);
             }
             _ => {}
-        }
-    }
-}
-
-pub struct Client {
-    engine: Engine,
-}
-
-impl Client {
-    async fn new(app_config: AppConfig, window: Arc<Window>) -> Self {
-        let engine = Engine::new(app_config, window).await;
-
-        Self { engine }
-    }
-
-    fn window(&self) -> &Window {
-        &self.engine.graphics.window
-    }
-
-    fn request_redraw(&self) {
-        self.window().request_redraw();
-    }
-
-    fn render(&mut self) {
-        self.engine.update();
-        self.engine.render();
-    }
-
-    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.engine.resize(new_size);
-    }
-
-    fn handle_button_press(&mut self, button: InputButton, pressed: bool) {
-        self.engine.handle_button_press(button, pressed);
-    }
-
-    fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {
-        self.engine.handle_mouse_move(position);
-    }
-
-    fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
-        self.engine.handle_mouse_scroll(delta);
+        });
     }
 }
