@@ -13,9 +13,9 @@ pub fn init() {
     App::new()
         .set_camera(CameraConfig {
             position: WorldPosition {
-                x: 120.0,
+                x: -120.0,
                 y: 240.0,
-                z: 120.0,
+                z: -120.0,
             },
             looking_at: WorldPosition {
                 x: 0.0,
@@ -217,13 +217,13 @@ fn update_camera_position(mut camera: Camera, input: Input) {
     }
 
     if input.pressed(InputButton::Key(KeyCode::KeyA)) {
-        delta_x -= right_x;
-        delta_z -= right_z;
+        delta_x += right_x;
+        delta_z += right_z;
     }
 
     if input.pressed(InputButton::Key(KeyCode::KeyD)) {
-        delta_x += right_x;
-        delta_z += right_z;
+        delta_x -= right_x;
+        delta_z -= right_z;
     }
 
     let delta_length = (delta_x * delta_x + delta_z * delta_z).sqrt();

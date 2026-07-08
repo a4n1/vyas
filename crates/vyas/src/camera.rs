@@ -48,7 +48,7 @@ impl CameraState {
     }
 
     pub(crate) fn build_view_projection_matrix(&self) -> Mat4 {
-        let view = Mat4::look_at_rh(
+        let view = Mat4::look_at_lh(
             (&self.position).into(),
             (&self.looking_at).into(),
             Vec3 {
@@ -73,7 +73,7 @@ impl CameraState {
         Mat4::from_cols_array(&[
             f / aspect, 0.0, 0.0, 0.0,
             0.0, f, 0.0, 0.0,
-            0.0, 0.0, 0.0, -1.0,
+            0.0, 0.0, 0.0, 1.0,
             0.0, 0.0, znear, 0.0,
         ])
     }
