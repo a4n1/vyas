@@ -8,12 +8,16 @@ use crate::{
     vertex::Vertex,
 };
 
+const MULTISAMPLE_COUNT: u32 = 4;
+
 pub struct Pipeline {
     pub(crate) camera_uniform: CameraUniform,
     pub(crate) camera_buffer: wgpu::Buffer,
     pub(crate) camera_bind_group: wgpu::BindGroup,
     pub(crate) depth_texture: wgpu::Texture,
     pub(crate) depth_view: wgpu::TextureView,
+    pub(crate) multisample_texture: wgpu::Texture,
+    pub(crate) multisample_view: wgpu::TextureView,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
     pub(crate) vertex_buffer: wgpu::Buffer,
     pub(crate) index_buffer: wgpu::Buffer,
@@ -73,6 +77,10 @@ impl Pipeline {
         let depth_texture = Self::create_depth_texture(graphics);
         let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let multisample_texture = Self::create_multisample_texture(graphics);
+        let multisample_view =
+            multisample_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         let render_pipeline_layout =
             graphics
                 .device
@@ -124,7 +132,7 @@ impl Pipeline {
                         bias: Default::default(),
                     }),
                     multisample: wgpu::MultisampleState {
-                        count: 1,
+                        count: MULTISAMPLE_COUNT,
                         mask: !0,
                         alpha_to_coverage_enabled: false,
                     },
@@ -152,6 +160,8 @@ impl Pipeline {
             camera_bind_group,
             depth_texture,
             depth_view,
+            multisample_texture,
+            multisample_view,
             render_pipeline,
             vertex_buffer,
             index_buffer,
@@ -169,6 +179,12 @@ impl Pipeline {
         self.depth_view = self
             .depth_texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        self.multisample_texture = Self::create_multisample_texture(graphics);
+
+        self.multisample_view = self
+            .multisample_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
     }
 
     fn create_depth_texture(graphics: &Graphics) -> wgpu::Texture {
@@ -180,9 +196,26 @@ impl Pipeline {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: MULTISAMPLE_COUNT,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth24Plus,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
+    }
+
+    fn create_multisample_texture(graphics: &Graphics) -> wgpu::Texture {
+        graphics.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Multisample Texture"),
+            size: wgpu::Extent3d {
+                width: graphics.surface_config.width.max(1),
+                height: graphics.surface_config.height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: MULTISAMPLE_COUNT,
+            dimension: wgpu::TextureDimension::D2,
+            format: graphics.surface_config.format.add_srgb_suffix(),
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         })
