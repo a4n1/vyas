@@ -8,6 +8,7 @@ export function Save() {
   const [isSelectVisible, setIsSelectVisible] = createSignal(false);
 
   let rootRef: HTMLDivElement | undefined;
+  let fileInputRef: HTMLInputElement | undefined;
 
   const handleSave = () => {
     const grid: Grid | undefined = forge()?.export_grid();
@@ -16,6 +17,24 @@ export function Save() {
     }
 
     saveGrid(grid);
+  };
+
+  const handleLoadClick = () => {
+    setIsSelectVisible(false);
+    fileInputRef?.click();
+  };
+
+  const handleLoad = async (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    forge()?.load_grid(bytes);
+    input.value = "";
   };
 
   onMount(() => {
@@ -31,11 +50,16 @@ export function Save() {
 
   return (
     <div ref={rootRef}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        hidden
+        onchange={handleLoad}
+      />
+
       <div class={styles.select} hidden={!isSelectVisible()}>
-        <button
-          class={styles.inputGroup}
-          onclick={() => setIsSelectVisible(false)}
-        >
+        <button class={styles.inputGroup} onclick={handleLoadClick}>
           <span>Load</span>
         </button>
       </div>
@@ -126,7 +150,13 @@ function saveGrid(grid: Grid) {
 
   const a = document.createElement("a");
   a.href = url;
-  a.download = "grid.csv";
+  const filename = prompt("File name");
+
+  if (filename === null || filename === "") {
+    return;
+  }
+
+  a.download = `${filename}.csv`;
   a.click();
   a.remove();
 

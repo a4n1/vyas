@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    asset::VoxelAsset,
     chunk::{Chunk, ChunkMap},
     color::Color,
     config::RenderConfig,
@@ -68,6 +69,16 @@ impl VoxelCommands {
                 chunk.remove_voxel(&local_position);
             }
         }));
+    }
+
+    pub fn spawn_asset(&mut self, asset: VoxelAsset, position: &GridPosition) {
+        for (asset_position, voxel) in asset.grid {
+            let x = asset_position.x + position.x;
+            let y = asset_position.y + position.y;
+            let z = asset_position.z + position.z;
+
+            self.spawn(GridPosition { x, y, z }, voxel);
+        }
     }
 }
 

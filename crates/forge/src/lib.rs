@@ -26,6 +26,8 @@ pub enum CursorMode {
     Remove,
 }
 
+struct VoxelFile(Option<Vec<u8>>);
+
 #[wasm_bindgen]
 pub struct Forge {
     client: SharedClient,
@@ -59,6 +61,7 @@ impl Forge {
             .insert_resource(Color::Srgb(Srgb { r: 0, g: 0, b: 0 }))
             .insert_resource(CursorState(CursorMode::Insert))
             .insert_resource(InsertPlane(Some(0)))
+            .insert_resource(VoxelFile(None))
             .insert_resource(grid.clone())
             .add_systems(Startup, draw_scene)
             .add_systems(Update, update_camera_yaw)
@@ -66,6 +69,7 @@ impl Forge {
             .add_systems(Update, update_camera_zoom)
             .add_systems(Update, update_camera_position)
             .add_systems(Update, edit_voxel)
+            .add_systems(Update, load_grid)
             .run();
 
         Self { client, grid }
@@ -109,6 +113,34 @@ impl Forge {
                 })
                 .collect::<Vec<(GridPosition, Voxel)>>(),
         )
+    }
+
+    fn denormalize_grid(grid: &Grid) -> Grid {
+        HashMap::from_iter(
+            grid.iter()
+                .map(|(position, voxel)| {
+                    let position = GridPosition {
+                        x: position.x - GRID_SIZE / 2,
+                        y: position.y,
+                        z: position.z - GRID_SIZE / 2,
+                    };
+                    (position, voxel.clone())
+                })
+                .collect::<Vec<(GridPosition, Voxel)>>(),
+        )
+    }
+
+    fn grid_in_bounds(grid: &Grid) -> bool {
+        grid.keys().all(|position| {
+            (0..GRID_SIZE).contains(&position.x)
+                && (0..GRID_SIZE).contains(&position.y)
+                && (0..GRID_SIZE).contains(&position.z)
+        })
+    }
+
+    pub fn load_grid(&self, bytes: Vec<u8>) {
+        self.client
+            .set_resource::<VoxelFile>(VoxelFile(Some(bytes)));
     }
 }
 
@@ -323,7 +355,7 @@ fn insert_voxel(
         return;
     }
 
-    *insert_plane = InsertPlane(Some(position.y));
+    insert_plane.0 = Some(position.y);
 
     let voxel = Voxel {
         color: color.clone(),
@@ -350,4 +382,43 @@ fn remove_voxel(hit: &VoxelHit, grid: &SharedGrid, mut voxels: VoxelCommands) {
 
     grid.0.borrow_mut().remove(&position);
     voxels.despawn(position.clone());
+}
+
+fn load_grid(mut file: ResMut<VoxelFile>, grid: ResMut<SharedGrid>, mut voxels: VoxelCommands) {
+    let Some(ref voxel_file) = file.0.clone() else {
+        return;
+    };
+
+    file.0 = None;
+
+    let asset = match VoxelAsset::from_bytes(voxel_file) {
+        Ok(asset) => asset,
+        Err(e) => {
+            log::warn!("failed to load asset: {e:#?}");
+            return;
+        }
+    };
+
+    if !Forge::grid_in_bounds(&asset.grid) {
+        log::warn!("failed to load asset: grid out of bounds");
+        return;
+    }
+
+    let next_grid = Forge::denormalize_grid(&asset.grid);
+    let prev_grid = grid.0.borrow_mut().drain().collect::<Vec<_>>();
+
+    for (position, _) in prev_grid {
+        voxels.despawn(position);
+    }
+
+    voxels.spawn_asset(
+        asset,
+        &GridPosition {
+            x: -GRID_SIZE / 2,
+            y: 0,
+            z: -GRID_SIZE / 2,
+        },
+    );
+
+    *grid.0.borrow_mut() = next_grid;
 }
