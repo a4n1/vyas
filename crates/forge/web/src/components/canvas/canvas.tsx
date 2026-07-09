@@ -1,4 +1,4 @@
-import { hexColorToU32, hsvToHex } from "~/components/toolbar/color-picker";
+import { hsvToRgb } from "~/components/toolbar/color-picker";
 import * as vyas from "~/pkg/forge.js";
 import { store } from "~/store";
 import { createEffect, onMount } from "solid-js";
@@ -12,8 +12,8 @@ export function Canvas() {
   });
 
   createEffect(() => {
-    const hex = hsvToHex(color());
-    forge()?.set_color(hexColorToU32(hex));
+    const { red, green, blue } = hsvToRgb(color());
+    forge()?.set_color(red, green, blue);
   });
 
   createEffect(() => {

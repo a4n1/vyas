@@ -139,7 +139,7 @@ function componentToHex(value: number) {
   return Math.round(value).toString(16).padStart(2, "0").toUpperCase();
 }
 
-function hsvToRgb({ h, s, v }: Hsv) {
+export function hsvToRgb({ h, s, v }: Hsv) {
   const chroma = v * s;
   const hue = h / 60;
   const x = chroma * (1 - Math.abs((hue % 2) - 1));
@@ -186,7 +186,7 @@ function rgbToHsv(red: number, green: number, blue: number): Hsv {
   };
 }
 
-export function hsvToHex(hsv: Hsv) {
+function hsvToHex(hsv: Hsv) {
   const { red, green, blue } = hsvToRgb(hsv);
   return `#${componentToHex(red)}${componentToHex(green)}${componentToHex(blue)}`;
 }
@@ -201,14 +201,4 @@ function hexToHsv(value: string) {
     Number.parseInt(color.slice(2, 4), 16),
     Number.parseInt(color.slice(4, 6), 16),
   );
-}
-
-export function hexColorToU32(hex: string): number {
-  hex = hex.replace(/^#/, "");
-
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-
-  return ((0 << 24) | (r << 16) | (g << 8) | b) >>> 0;
 }

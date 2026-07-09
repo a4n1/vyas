@@ -112,6 +112,23 @@ macro_rules! impl_system {
     };
 }
 
-impl_system!(A);
-impl_system!(A, B);
-impl_system!(A, B, C);
+impl_system!(P0);
+impl_system!(P0, P1);
+impl_system!(P0, P1, P2);
+impl_system!(P0, P1, P2, P3);
+impl_system!(P0, P1, P2, P3, P4);
+impl_system!(P0, P1, P2, P3, P4, P5);
+impl_system!(P0, P1, P2, P3, P4, P5, P6);
+impl_system!(P0, P1, P2, P3, P4, P5, P6, P7);
+impl_system!(P0, P1, P2, P3, P4, P5, P6, P7, P8);
+impl_system!(P0, P1, P2, P3, P4, P5, P6, P7, P8, P9);
+impl_system!(P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10);
+impl_system!(P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11);
+impl_system!(P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12);
+impl_system!(P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, P13);
+impl_system!(
+    P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, P13, P14
+);
+impl_system!(
+    P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, P15
+);

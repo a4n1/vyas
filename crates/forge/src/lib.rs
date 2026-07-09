@@ -1,17 +1,35 @@
-use std::{
-    collections::HashMap,
-    sync::{LazyLock, Mutex, MutexGuard},
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use vyas::prelude::*;
-
 use wasm_bindgen::prelude::*;
 
 const GRID_SIZE: i32 = 64;
 
+struct InsertPlane(Option<i32>);
+
+struct CursorState(CursorMode);
+
+type Grid = HashMap<GridPosition, Voxel>;
+
+#[derive(Clone, Default)]
+struct SharedGrid(Rc<RefCell<Grid>>);
+
+impl SharedGrid {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[wasm_bindgen]
+pub enum CursorMode {
+    Insert,
+    Remove,
+}
+
 #[wasm_bindgen]
 pub struct Forge {
     client: SharedClient,
+    grid: SharedGrid,
 }
 
 #[wasm_bindgen]
@@ -21,6 +39,7 @@ impl Forge {
         console_error_panic_hook::set_once();
 
         let client = SharedClient::new();
+        let grid = SharedGrid::new();
 
         App::new()
             .set_client(Some(client.clone()))
@@ -37,6 +56,10 @@ impl Forge {
                 },
                 fov: 45.0,
             })
+            .insert_resource(Color::Srgb(Srgb { r: 0, g: 0, b: 0 }))
+            .insert_resource(CursorState(CursorMode::Insert))
+            .insert_resource(InsertPlane(Some(0)))
+            .insert_resource(grid.clone())
             .add_systems(Startup, draw_scene)
             .add_systems(Update, update_camera_yaw)
             .add_systems(Update, update_camera_pitch)
@@ -45,34 +68,22 @@ impl Forge {
             .add_systems(Update, edit_voxel)
             .run();
 
-        Self { client }
+        Self { client, grid }
     }
 
-    pub fn set_color(&self, color: u32) {
-        let Ok(mut state) = STATE.lock() else {
-            log::error!("failed to take state lock");
-            return;
-        };
-
-        state.color = VoxelColor(color);
+    pub fn set_color(&self, r: u8, g: u8, b: u8) {
+        self.client
+            .set_resource::<Color>(Color::Srgb(Srgb { r, g, b }));
     }
 
     pub fn set_cursor_mode(&self, cursor_mode: CursorMode) {
-        let Ok(mut state) = STATE.lock() else {
-            log::error!("failed to take state lock");
-            return;
-        };
-
-        state.cursor_mode = cursor_mode;
+        self.client
+            .set_resource::<CursorState>(CursorState(cursor_mode));
     }
 
     pub fn export_grid(&self) -> Option<JsValue> {
-        let Ok(state) = STATE.lock() else {
-            log::error!("failed to take state lock");
-            return None;
-        };
-
-        let grid = Self::normalize_grid(&state.grid);
+        let grid = self.grid.0.borrow();
+        let grid = Self::normalize_grid(&grid);
 
         let serialized_result = match serde_wasm_bindgen::to_value(&grid) {
             Ok(result) => Some(result),
@@ -98,60 +109,6 @@ impl Forge {
                 })
                 .collect::<Vec<(GridPosition, Voxel)>>(),
         )
-    }
-}
-
-static STATE: LazyLock<Mutex<State>> = LazyLock::new(|| {
-    Mutex::new(State {
-        color: VoxelColor(0x000000),
-        insert_plane: None,
-        cursor_mode: CursorMode::Insert,
-        grid: HashMap::new(),
-    })
-});
-
-struct State {
-    color: VoxelColor,
-    insert_plane: Option<InsertPlane>,
-    cursor_mode: CursorMode,
-    grid: Grid,
-}
-
-type StateLock<'a> = MutexGuard<'a, State>;
-
-#[derive(Clone, Copy)]
-struct VoxelColor(u32);
-
-#[derive(Clone, Copy)]
-struct InsertPlane(i32);
-
-#[wasm_bindgen]
-pub enum CursorMode {
-    Insert,
-    Remove,
-}
-
-type Grid = HashMap<GridPosition, Voxel>;
-
-impl From<VoxelColor> for Color {
-    fn from(value: VoxelColor) -> Self {
-        let r = ((value.0 >> 16) & 0xFF) as u8;
-        let g = ((value.0 >> 8) & 0xFF) as u8;
-        let b = (value.0 & 0xFF) as u8;
-
-        Color::Srgb(Srgb { r, g, b })
-    }
-}
-
-impl From<Color> for VoxelColor {
-    fn from(value: Color) -> Self {
-        let r = value.r() as u32;
-        let g = value.g() as u32;
-        let b = value.b() as u32;
-
-        let color = ((r << 16) | (g << 8) | b) as u32;
-
-        VoxelColor(color)
     }
 }
 
@@ -316,14 +273,16 @@ fn update_camera_position(mut camera: Camera, input: Input) {
     camera.looking_at.z += delta_z;
 }
 
-fn edit_voxel(input: Input, voxels: VoxelCommands) {
-    let Ok(mut lock) = STATE.lock() else {
-        log::warn!("failed to take state lock");
-        return;
-    };
-
+fn edit_voxel(
+    input: Input,
+    voxels: VoxelCommands,
+    color: Res<Color>,
+    cursor_state: Res<CursorState>,
+    mut insert_plane: ResMut<InsertPlane>,
+    grid: Res<SharedGrid>,
+) {
     if !input.pressed(InputButton::Mouse(MouseButton::Left)) {
-        lock.insert_plane = None;
+        insert_plane.0 = None;
         return;
     }
 
@@ -331,21 +290,27 @@ fn edit_voxel(input: Input, voxels: VoxelCommands) {
         return;
     };
 
-    match lock.cursor_mode {
-        CursorMode::Insert => insert_voxel(hit, lock, voxels),
-        CursorMode::Remove => remove_voxel(hit, lock, voxels),
+    match cursor_state.0 {
+        CursorMode::Insert => insert_voxel(hit, &color, &mut insert_plane, &grid, voxels),
+        CursorMode::Remove => remove_voxel(hit, &grid, voxels),
     }
 }
 
-fn insert_voxel(hit: &VoxelHit, mut state: StateLock, mut voxels: VoxelCommands) {
+fn insert_voxel(
+    hit: &VoxelHit,
+    color: &Color,
+    insert_plane: &mut InsertPlane,
+    grid: &SharedGrid,
+    mut voxels: VoxelCommands,
+) {
     let position = hit.position.adjacent(hit.face);
 
     if position.y < 0 || position.y >= GRID_SIZE {
         return;
     }
 
-    if let Some(insert_plane) = state.insert_plane
-        && insert_plane.0 != position.y
+    if let Some(insert_plane) = insert_plane.0
+        && insert_plane != position.y
     {
         return;
     }
@@ -358,17 +323,17 @@ fn insert_voxel(hit: &VoxelHit, mut state: StateLock, mut voxels: VoxelCommands)
         return;
     }
 
-    state.insert_plane = Some(InsertPlane(position.y));
+    *insert_plane = InsertPlane(Some(position.y));
 
     let voxel = Voxel {
-        color: state.color.into(),
+        color: color.clone(),
     };
 
+    grid.0.borrow_mut().insert(position.clone(), voxel.clone());
     voxels.spawn(position.clone(), voxel.clone());
-    state.grid.insert(position, voxel);
 }
 
-fn remove_voxel(hit: &VoxelHit, mut state: StateLock, mut voxels: VoxelCommands) {
+fn remove_voxel(hit: &VoxelHit, grid: &SharedGrid, mut voxels: VoxelCommands) {
     let position = hit.position.clone();
 
     if position.y < 0 || position.y >= GRID_SIZE {
@@ -383,6 +348,6 @@ fn remove_voxel(hit: &VoxelHit, mut state: StateLock, mut voxels: VoxelCommands)
         return;
     }
 
+    grid.0.borrow_mut().remove(&position);
     voxels.despawn(position.clone());
-    state.grid.remove(&position);
 }
