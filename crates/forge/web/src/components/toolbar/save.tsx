@@ -24,6 +24,11 @@ export function Save() {
     fileInputRef?.click();
   };
 
+  const handleClear = () => {
+    setIsSelectVisible(false);
+    forge()?.load_grid(new TextEncoder().encode("x,y,z,r,g,b"));
+  };
+
   const handleLoad = async (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -61,6 +66,10 @@ export function Save() {
       <div class={styles.select} hidden={!isSelectVisible()}>
         <button class={styles.inputGroup} onclick={handleLoadClick}>
           <span>Load</span>
+        </button>
+
+        <button class={styles.inputGroup} onclick={handleClear}>
+          <span>Clear</span>
         </button>
       </div>
 
