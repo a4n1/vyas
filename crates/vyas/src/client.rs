@@ -47,6 +47,10 @@ impl SharedClient {
     }
 
     pub(crate) fn apply_commands(&self) {
+        if self.client.borrow().is_none() {
+            return;
+        }
+
         let commands = self.commands.borrow_mut().drain(..).collect::<Vec<_>>();
 
         if commands.is_empty() {

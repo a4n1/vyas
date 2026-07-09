@@ -11,6 +11,20 @@ struct CursorState(CursorMode);
 
 type Grid = HashMap<GridPosition, Voxel>;
 
+#[wasm_bindgen(module = "/src/browser.js")]
+extern "C" {
+    #[wasm_bindgen(js_name = onGridUpdate)]
+    fn on_grid_update();
+}
+
+struct Browser;
+
+impl Browser {
+    fn trigger_grid_update() {
+        on_grid_update();
+    }
+}
+
 #[derive(Clone, Default)]
 struct SharedGrid(Rc<RefCell<Grid>>);
 
@@ -363,6 +377,7 @@ fn insert_voxel(
 
     grid.0.borrow_mut().insert(position.clone(), voxel.clone());
     voxels.spawn(position.clone(), voxel.clone());
+    Browser::trigger_grid_update();
 }
 
 fn remove_voxel(hit: &VoxelHit, grid: &SharedGrid, mut voxels: VoxelCommands) {
@@ -382,6 +397,7 @@ fn remove_voxel(hit: &VoxelHit, grid: &SharedGrid, mut voxels: VoxelCommands) {
 
     grid.0.borrow_mut().remove(&position);
     voxels.despawn(position.clone());
+    Browser::trigger_grid_update();
 }
 
 fn load_grid(mut file: ResMut<VoxelFile>, grid: ResMut<SharedGrid>, mut voxels: VoxelCommands) {
@@ -421,4 +437,5 @@ fn load_grid(mut file: ResMut<VoxelFile>, grid: ResMut<SharedGrid>, mut voxels: 
     );
 
     *grid.0.borrow_mut() = next_grid;
+    Browser::trigger_grid_update();
 }

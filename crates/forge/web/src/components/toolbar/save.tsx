@@ -101,26 +101,48 @@ export function Save() {
   );
 }
 
-type Grid = Map<Position, Voxel>;
+export type Grid = Map<Position, Voxel>;
 
-interface Position {
+export interface Position {
   x: number;
   y: number;
   z: number;
 }
 
-interface Voxel {
+export interface Voxel {
   color: Color;
 }
 
-interface Color {
+export interface Color {
   Srgb: Srgb;
 }
 
-interface Srgb {
+export interface Srgb {
   r: number;
   g: number;
   b: number;
+}
+
+export function serializeGrid(grid: Grid) {
+  const content: string[] = [];
+
+  content.push("x,y,z,r,g,b");
+
+  const entries = Array.from(grid).sort(
+    ([a], [b]) => a.x - b.x || a.y - b.y || a.z - b.z,
+  );
+
+  for (const [position, voxel] of entries) {
+    const color = voxel.color.Srgb;
+
+    content.push(
+      `${position.x},${position.y},${position.z},${color.r},${color.g},${color.b}`,
+    );
+  }
+
+  const csv = content.join("\n");
+
+  return csv;
 }
 
 function saveGrid(grid: Grid) {
