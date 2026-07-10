@@ -1,6 +1,14 @@
 {
   "name": "forge",
   "type": "module",
+  "private": true,
+  "description": "A voxel editor",
+  "license": "MIT",
+  "author": "Agni <a@a4n1.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/a4n1/vyas.git"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",

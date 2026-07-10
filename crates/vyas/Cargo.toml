@@ -2,6 +2,10 @@
 name = "vyas"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+authors = ["Agni <a@a4n1.com>"]
+description = "A voxel engine"
+repository = "https://github.com/a4n1/vyas"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
