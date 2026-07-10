@@ -14,6 +14,9 @@ pub(crate) struct Graphics {
     pub(crate) window: Arc<Window>,
     pub(crate) device: wgpu::Device,
     pub(crate) surface_config: wgpu::SurfaceConfiguration,
+    pub(crate) viewport_size: PhysicalSize<u32>,
+    pub(crate) max_texture_dimension_2d: u32,
+    pub(crate) supports_srgb_surface_view: bool,
     surface: wgpu::Surface<'static>,
     queue: wgpu::Queue,
     state: State,
@@ -29,16 +32,22 @@ impl Graphics {
     pub(crate) async fn new(window: Arc<Window>, render_config: &RenderConfig) -> Self {
         let size = window.inner_size();
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance_descriptor = wgpu::InstanceDescriptor {
             #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::PRIMARY,
             #[cfg(target_arch = "wasm32")]
-            backends: wgpu::Backends::BROWSER_WEBGPU,
+            backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
             flags: Default::default(),
             memory_budget_thresholds: Default::default(),
             backend_options: Default::default(),
             display: None,
-        });
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let instance = wgpu::Instance::new(instance_descriptor);
+
+        #[cfg(target_arch = "wasm32")]
+        let instance = wgpu::util::new_instance_with_webgpu_detection(instance_descriptor).await;
 
         let surface = instance
             .create_surface(window.clone())
@@ -52,6 +61,9 @@ impl Graphics {
             })
             .await
             .expect("failed to request adapter");
+
+        let adapter_info = adapter.get_info();
+        let supports_srgb_surface_view = adapter_info.backend != wgpu::Backend::Gl;
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -67,6 +79,7 @@ impl Graphics {
             })
             .await
             .expect("failed to request device");
+        let max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
 
         let surface_caps = surface.get_capabilities(&adapter);
 
@@ -76,22 +89,34 @@ impl Graphics {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+        let render_size = Self::render_size(size, max_texture_dimension_2d);
 
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format.remove_srgb_suffix(),
-            width: size.width,
-            height: size.height,
+            format: if supports_srgb_surface_view {
+                surface_format.remove_srgb_suffix()
+            } else {
+                surface_format
+            },
+            width: render_size.width,
+            height: render_size.height,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             desired_maximum_frame_latency: 2,
-            view_formats: vec![surface_format.add_srgb_suffix()],
+            view_formats: if supports_srgb_surface_view {
+                vec![surface_format.add_srgb_suffix()]
+            } else {
+                vec![]
+            },
         };
 
         Self {
             window,
             device,
             surface_config,
+            viewport_size: size,
+            max_texture_dimension_2d,
+            supports_srgb_surface_view,
             surface,
             queue,
             state: State {
@@ -102,7 +127,10 @@ impl Graphics {
         }
     }
 
-    pub(crate) fn resize(&mut self, PhysicalSize { width, height }: PhysicalSize<u32>) {
+    pub(crate) fn resize(&mut self, size: PhysicalSize<u32>) {
+        self.viewport_size = size;
+        let PhysicalSize { width, height } = Self::render_size(size, self.max_texture_dimension_2d);
+
         if self.surface_config.width == width
             && self.surface_config.height == height
             && self.state.is_surface_configured
@@ -113,6 +141,14 @@ impl Graphics {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.state.is_surface_configured = false;
+    }
+
+    pub(crate) fn render_format(&self) -> wgpu::TextureFormat {
+        if self.supports_srgb_surface_view {
+            self.surface_config.format.add_srgb_suffix()
+        } else {
+            self.surface_config.format
+        }
     }
 
     pub(crate) fn update(&mut self, pipeline: &Pipeline, world: &World) {
@@ -148,7 +184,7 @@ impl Graphics {
     }
 
     pub(crate) fn render(&mut self, pipeline: &Pipeline) {
-        if self.surface_config.width == 0 && self.surface_config.height == 0 {
+        if self.surface_config.width == 0 || self.surface_config.height == 0 {
             return;
         }
 
@@ -178,7 +214,9 @@ impl Graphics {
         };
 
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
-            format: Some(self.surface_config.format.add_srgb_suffix()),
+            format: self
+                .supports_srgb_surface_view
+                .then(|| self.render_format()),
             ..Default::default()
         });
 
@@ -245,5 +283,21 @@ impl Graphics {
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
         self.window.request_redraw();
+    }
+
+    fn render_size(size: PhysicalSize<u32>, max_texture_dimension_2d: u32) -> PhysicalSize<u32> {
+        if size.width == 0
+            || size.height == 0
+            || (size.width <= max_texture_dimension_2d && size.height <= max_texture_dimension_2d)
+        {
+            return size;
+        }
+
+        let scale = max_texture_dimension_2d as f64 / size.width.max(size.height) as f64;
+
+        PhysicalSize {
+            width: ((size.width as f64 * scale).floor() as u32).max(1),
+            height: ((size.height as f64 * scale).floor() as u32).max(1),
+        }
     }
 }

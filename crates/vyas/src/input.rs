@@ -1,8 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use glam::{Vec3, Vec4};
-use wgpu::SurfaceConfiguration;
-use winit::dpi::PhysicalPosition;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 
 use crate::{
     camera::CameraState,
@@ -77,12 +76,12 @@ impl InputState {
         &mut self,
         mouse_position: MousePosition,
         world: &World,
-        surface_config: &SurfaceConfiguration,
+        viewport_size: PhysicalSize<u32>,
     ) {
         self.mouse_position = mouse_position;
 
         let camera = world.resource::<CameraState>();
-        let ray = Self::ray_from_cursor(mouse_position, &camera, surface_config);
+        let ray = Self::ray_from_cursor(mouse_position, &camera, viewport_size);
         self.voxel_hit = DDA::hit(&ray, world);
     }
 
@@ -105,13 +104,15 @@ impl InputState {
     fn ray_from_cursor(
         mouse_position: MousePosition,
         camera: &Res<CameraState>,
-        surface_config: &SurfaceConfiguration,
+        viewport_size: PhysicalSize<u32>,
     ) -> Ray {
         let camera_position = Vec3::from(&camera.position);
         let view_projection = camera.build_view_projection_matrix();
 
-        let ndc_x = mouse_position.x as f32 / surface_config.width as f32 * 2.0 - 1.0;
-        let ndc_y = 1.0 - mouse_position.y as f32 / surface_config.height as f32 * 2.0;
+        let viewport_width = viewport_size.width.max(1) as f32;
+        let viewport_height = viewport_size.height.max(1) as f32;
+        let ndc_x = mouse_position.x as f32 / viewport_width * 2.0 - 1.0;
+        let ndc_y = 1.0 - mouse_position.y as f32 / viewport_height * 2.0;
         let world_point = view_projection.inverse() * Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
         let world_point = world_point.truncate() / world_point.w;
 

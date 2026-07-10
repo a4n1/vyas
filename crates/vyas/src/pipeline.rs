@@ -106,7 +106,7 @@ impl Pipeline {
                         module: &shader,
                         entry_point: Some("fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
-                            format: graphics.surface_config.format.add_srgb_suffix(),
+                            format: graphics.render_format(),
                             blend: Some(wgpu::BlendState {
                                 color: wgpu::BlendComponent::REPLACE,
                                 alpha: wgpu::BlendComponent::REPLACE,
@@ -191,8 +191,16 @@ impl Pipeline {
         graphics.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth-texture"),
             size: wgpu::Extent3d {
-                width: graphics.surface_config.width.max(1),
-                height: graphics.surface_config.height.max(1),
+                width: graphics
+                    .surface_config
+                    .width
+                    .min(graphics.max_texture_dimension_2d)
+                    .max(1),
+                height: graphics
+                    .surface_config
+                    .height
+                    .min(graphics.max_texture_dimension_2d)
+                    .max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -208,14 +216,22 @@ impl Pipeline {
         graphics.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("multisample-texture"),
             size: wgpu::Extent3d {
-                width: graphics.surface_config.width.max(1),
-                height: graphics.surface_config.height.max(1),
+                width: graphics
+                    .surface_config
+                    .width
+                    .min(graphics.max_texture_dimension_2d)
+                    .max(1),
+                height: graphics
+                    .surface_config
+                    .height
+                    .min(graphics.max_texture_dimension_2d)
+                    .max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: MULTISAMPLE_COUNT,
             dimension: wgpu::TextureDimension::D2,
-            format: graphics.surface_config.format.add_srgb_suffix(),
+            format: graphics.render_format(),
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         })
