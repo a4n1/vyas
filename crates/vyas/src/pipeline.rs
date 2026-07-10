@@ -28,7 +28,7 @@ impl Pipeline {
         let shader = graphics
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Shader"),
+                label: Some("shader"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("./shaders/shader.wgsl").into()),
             });
 
@@ -41,7 +41,7 @@ impl Pipeline {
         let camera_buffer = graphics
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Buffer"),
+                label: Some("camera-buffer"),
                 contents: bytemuck::cast_slice(&[camera_uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
@@ -60,7 +60,7 @@ impl Pipeline {
                         },
                         count: None,
                     }],
-                    label: Some("camera_bind_group_layout"),
+                    label: Some("camera-bind-group-layout"),
                 });
 
         let camera_bind_group = graphics
@@ -71,7 +71,7 @@ impl Pipeline {
                     binding: 0,
                     resource: camera_buffer.as_entire_binding(),
                 }],
-                label: Some("camera_bind_group"),
+                label: Some("camera-bind-group"),
             });
 
         let depth_texture = Self::create_depth_texture(graphics);
@@ -85,7 +85,7 @@ impl Pipeline {
             graphics
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Render Pipeline Layout"),
+                    label: Some("render-pipeline-layout"),
                     bind_group_layouts: &[Some(&camera_bind_group_layout)],
                     immediate_size: 0,
                 });
@@ -94,7 +94,7 @@ impl Pipeline {
             graphics
                 .device
                 .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Render Pipeline"),
+                    label: Some("render-pipeline"),
                     layout: Some(&render_pipeline_layout),
                     vertex: wgpu::VertexState {
                         module: &shader,
@@ -141,14 +141,14 @@ impl Pipeline {
                 });
 
         let vertex_buffer = graphics.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Vertex Buffer"),
+            label: Some("vertex-buffer"),
             size: render_config.max_buffer_size,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let index_buffer = graphics.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Index Buffer"),
+            label: Some("index-buffer"),
             size: render_config.max_buffer_size,
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -189,7 +189,7 @@ impl Pipeline {
 
     fn create_depth_texture(graphics: &Graphics) -> wgpu::Texture {
         graphics.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Depth Texture"),
+            label: Some("depth-texture"),
             size: wgpu::Extent3d {
                 width: graphics.surface_config.width.max(1),
                 height: graphics.surface_config.height.max(1),
@@ -206,7 +206,7 @@ impl Pipeline {
 
     fn create_multisample_texture(graphics: &Graphics) -> wgpu::Texture {
         graphics.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Multisample Texture"),
+            label: Some("multisample-texture"),
             size: wgpu::Extent3d {
                 width: graphics.surface_config.width.max(1),
                 height: graphics.surface_config.height.max(1),

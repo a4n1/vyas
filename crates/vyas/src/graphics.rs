@@ -55,7 +55,7 @@ impl Graphics {
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                label: None,
+                label: Some("device"),
                 required_features: wgpu::Features::empty(),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 #[cfg(not(target_arch = "wasm32"))]
@@ -185,11 +185,11 @@ impl Graphics {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
+                label: Some("render-encoder"),
             });
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
+            label: Some("render-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &pipeline.multisample_view,
                 resolve_target: Some(&view),
