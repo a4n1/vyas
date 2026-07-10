@@ -5,7 +5,7 @@
   margin-right: 4px;
 }
 
-.trigger {
+.button {
   position: relative;
   display: grid;
   width: 24px;
@@ -23,17 +23,17 @@
     filter 0.1s;
 }
 
-.trigger:hover,
-.trigger[aria-expanded="true"] {
+.button:hover,
+.buttonOpen {
   filter: brightness(1.4);
 }
 
-.trigger:focus-visible {
+.button:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.82);
   outline-offset: 2px;
 }
 
-.triggerSwatch {
+.buttonSwatch {
   position: absolute;
   inset: 0;
 }

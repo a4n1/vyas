@@ -26,15 +26,17 @@ export function Canvas() {
     );
   });
 
-  createEffect(() => {
+  createEffect(async () => {
     const lastSave = localStorage.getItem("last_save");
 
     if (!lastSave) {
+      const response = await fetch("/models/tree.csv");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      forge()?.load_grid(bytes);
       return;
     }
 
     const csv = atob(lastSave);
-
     forge()?.load_grid(new TextEncoder().encode(csv));
   });
 

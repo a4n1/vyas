@@ -81,19 +81,17 @@ export function ColorPicker() {
     <div ref={root} class={styles.root}>
       <button
         type="button"
-        class={styles.trigger}
-        aria-label={`Select color, currently ${hex()}`}
-        aria-expanded={open()}
+        class={`${styles.button} ${open() ? styles.buttonOpen : ""}`}
         onClick={() => setOpen((current) => !current)}
       >
         <span
-          class={styles.triggerSwatch}
+          class={styles.buttonSwatch}
           style={{ "background-color": solidColor() }}
         />
       </button>
 
       <div class={styles.positioner} hidden={!open()}>
-        <div class={styles.content} role="dialog" aria-label="Select color">
+        <div class={styles.content}>
           <div
             class={styles.area}
             style={{ "--hue-color": `hsl(${color().h}deg 100% 50%)` }}
@@ -120,7 +118,6 @@ export function ColorPicker() {
           <div class={styles.inputRow}>
             <input
               class={styles.hexInput}
-              aria-label="Hex color"
               value={hex()}
               onInput={handleHexInput}
             />

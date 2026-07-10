@@ -62,7 +62,7 @@ impl Forge {
             .set_camera(CameraConfig {
                 position: WorldPosition {
                     x: -120.0,
-                    y: 240.0,
+                    y: 80.0,
                     z: -120.0,
                 },
                 looking_at: WorldPosition {

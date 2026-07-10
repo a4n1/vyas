@@ -1,0 +1,114 @@
+.content {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 2px;
+}
+
+.select {
+  position: absolute;
+  bottom: 56px;
+
+  padding: 8px 0;
+  border-radius: 4px;
+
+  background-color: rgba(10, 10, 10, 0.95);
+  backdrop-filter: blur(16px);
+  border: 0.5px solid #191919;
+  box-shadow:
+    rgba(0, 0, 0, 0.35) 0px 3px 8px 0px,
+    rgba(0, 0, 0, 0.5) 0px 1px 3px 0px,
+    rgba(255, 255, 255, 0.08) 0px 0.5px 0px 0px inset,
+    rgba(255, 255, 255, 0.3) 0px 0px 0.5px 0px inset;
+
+  transform: translateX(calc(-50% + 32px));
+}
+
+.inputGroup {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: start;
+  gap: 4px;
+
+  width: 100%;
+  padding: 4px 12px;
+
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+
+  border: none;
+  background: none;
+
+  transition: background-color 0.1s;
+}
+
+.inputGroup:hover {
+  background-color: #3a3a4e;
+}
+
+.submenu {
+  position: relative;
+}
+
+.submenuArrow {
+  display: grid;
+  justify-items: end;
+}
+
+.submenuContent {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: -8px;
+
+  display: none;
+  padding: 8px 0;
+  border-radius: 4px;
+
+  background-color: rgba(10, 10, 10, 0.95);
+  backdrop-filter: blur(16px);
+  border: 0.5px solid #191919;
+  box-shadow:
+    rgba(0, 0, 0, 0.35) 0px 3px 8px 0px,
+    rgba(0, 0, 0, 0.5) 0px 1px 3px 0px,
+    rgba(255, 255, 255, 0.08) 0px 0.5px 0px 0px inset,
+    rgba(255, 255, 255, 0.3) 0px 0px 0.5px 0px inset;
+}
+
+.submenuContent::before {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  bottom: 0;
+
+  width: 8px;
+
+  content: "";
+}
+
+.submenu:hover > .submenuContent,
+.submenu:focus-within > .submenuContent {
+  display: block;
+}
+
+.dropdown {
+  display: grid;
+  align-items: center;
+  justify-items: center;
+
+  border-radius: 4px;
+
+  border: none;
+  background: none;
+  padding: 0;
+
+  transition: background-color 0.1s;
+}
+
+.dropdown:hover {
+  background-color: #3a3a4e;
+}
+
+.dropdownSelected {
+  background-color: #3a3a4e;
+}
