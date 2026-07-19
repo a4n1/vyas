@@ -1,15 +1,18 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+mod history;
+mod storage;
+
+use std::{cell::RefCell, rc::Rc};
 
 use vyas::prelude::*;
 use wasm_bindgen::prelude::*;
+
+use crate::history::{Action, History};
 
 const GRID_SIZE: i32 = 64;
 
 struct InsertPlane(Option<i32>);
 
 struct CursorState(CursorMode);
-
-type Grid = HashMap<GridPosition, Voxel>;
 
 #[wasm_bindgen(module = "/src/browser.js")]
 extern "C" {
@@ -40,7 +43,12 @@ pub enum CursorMode {
     Remove,
 }
 
-struct VoxelFile(Option<Vec<u8>>);
+struct VoxelFile {
+    file: Option<Vec<u8>>,
+    initial_load: Option<bool>,
+}
+
+struct EditTransaction(Vec<Action>);
 
 #[wasm_bindgen]
 pub struct Forge {
@@ -75,7 +83,12 @@ impl Forge {
             .insert_resource(Color::Srgb(Srgb { r: 0, g: 0, b: 0 }))
             .insert_resource(CursorState(CursorMode::Insert))
             .insert_resource(InsertPlane(Some(0)))
-            .insert_resource(VoxelFile(None))
+            .insert_resource(VoxelFile {
+                file: None,
+                initial_load: None,
+            })
+            .insert_resource(History::new())
+            .insert_resource(EditTransaction(Vec::new()))
             .insert_resource(grid.clone())
             .add_systems(Startup, draw_scene)
             .add_systems(Update, update_camera_yaw)
@@ -83,7 +96,9 @@ impl Forge {
             .add_systems(Update, update_camera_zoom)
             .add_systems(Update, update_camera_position)
             .add_systems(Update, edit_voxel)
-            .add_systems(Update, load_grid)
+            .add_systems(Update, load_file)
+            .add_systems(Update, undo)
+            .add_systems(Update, redo)
             .run();
 
         Self { client, grid }
@@ -97,6 +112,13 @@ impl Forge {
     pub fn set_cursor_mode(&self, cursor_mode: CursorMode) {
         self.client
             .set_resource::<CursorState>(CursorState(cursor_mode));
+    }
+
+    pub fn load_grid(&self, bytes: Vec<u8>, initial_load: Option<bool>) {
+        self.client.set_resource::<VoxelFile>(VoxelFile {
+            file: Some(bytes),
+            initial_load: initial_load,
+        });
     }
 
     pub fn export_grid(&self) -> Option<JsValue> {
@@ -115,33 +137,29 @@ impl Forge {
     }
 
     fn normalize_grid(grid: &Grid) -> Grid {
-        HashMap::from_iter(
-            grid.iter()
-                .map(|(position, voxel)| {
-                    let position = GridPosition {
-                        x: position.x + GRID_SIZE / 2,
-                        y: position.y,
-                        z: position.z + GRID_SIZE / 2,
-                    };
-                    (position, voxel.clone())
-                })
-                .collect::<Vec<(GridPosition, Voxel)>>(),
-        )
+        grid.iter()
+            .map(|(position, voxel)| {
+                let position = GridPosition {
+                    x: position.x + GRID_SIZE / 2,
+                    y: position.y,
+                    z: position.z + GRID_SIZE / 2,
+                };
+                (position, voxel.clone())
+            })
+            .collect()
     }
 
     fn denormalize_grid(grid: &Grid) -> Grid {
-        HashMap::from_iter(
-            grid.iter()
-                .map(|(position, voxel)| {
-                    let position = GridPosition {
-                        x: position.x - GRID_SIZE / 2,
-                        y: position.y,
-                        z: position.z - GRID_SIZE / 2,
-                    };
-                    (position, voxel.clone())
-                })
-                .collect::<Vec<(GridPosition, Voxel)>>(),
-        )
+        grid.iter()
+            .map(|(position, voxel)| {
+                let position = GridPosition {
+                    x: position.x - GRID_SIZE / 2,
+                    y: position.y,
+                    z: position.z - GRID_SIZE / 2,
+                };
+                (position, voxel.clone())
+            })
+            .collect()
     }
 
     fn grid_in_bounds(grid: &Grid) -> bool {
@@ -150,11 +168,6 @@ impl Forge {
                 && (0..GRID_SIZE).contains(&position.y)
                 && (0..GRID_SIZE).contains(&position.z)
         })
-    }
-
-    pub fn load_grid(&self, bytes: Vec<u8>) {
-        self.client
-            .set_resource::<VoxelFile>(VoxelFile(Some(bytes)));
     }
 }
 
@@ -321,13 +334,19 @@ fn update_camera_position(mut camera: Camera, input: Input) {
 
 fn edit_voxel(
     input: Input,
-    voxels: VoxelCommands,
+    mut voxels: VoxelCommands,
     color: Res<Color>,
     cursor_state: Res<CursorState>,
+    mut edit_transaction: ResMut<EditTransaction>,
     mut insert_plane: ResMut<InsertPlane>,
     grid: Res<SharedGrid>,
+    mut history: ResMut<History>,
 ) {
     if !input.pressed(InputButton::Mouse(MouseButton::Left)) {
+        if !edit_transaction.0.is_empty() {
+            history.insert_actions(edit_transaction.0.drain(..).collect())
+        }
+
         insert_plane.0 = None;
         return;
     }
@@ -337,8 +356,15 @@ fn edit_voxel(
     };
 
     match cursor_state.0 {
-        CursorMode::Insert => insert_voxel(hit, &color, &mut insert_plane, &grid, voxels),
-        CursorMode::Remove => remove_voxel(hit, &grid, voxels),
+        CursorMode::Insert => insert_voxel(
+            hit,
+            &color,
+            &mut insert_plane,
+            &grid,
+            &mut voxels,
+            &mut edit_transaction,
+        ),
+        CursorMode::Remove => delete_voxel(hit, &grid, &mut voxels, &mut edit_transaction),
     }
 }
 
@@ -347,7 +373,8 @@ fn insert_voxel(
     color: &Color,
     insert_plane: &mut InsertPlane,
     grid: &SharedGrid,
-    mut voxels: VoxelCommands,
+    voxels: &mut VoxelCommands,
+    edit_transaction: &mut EditTransaction,
 ) {
     let position = hit.position.adjacent(hit.face);
 
@@ -369,18 +396,41 @@ fn insert_voxel(
         return;
     }
 
-    insert_plane.0 = Some(position.y);
-
     let voxel = Voxel {
         color: color.clone(),
     };
 
-    grid.0.borrow_mut().insert(position.clone(), voxel.clone());
-    voxels.spawn(position.clone(), voxel.clone());
+    if let Some(v) = grid.0.borrow_mut().get(&position)
+        && v == &voxel
+    {
+        return;
+    }
+
+    insert_plane.0 = Some(position.y);
+
+    spawn_voxel(&position, &voxel, grid, voxels);
+    edit_transaction
+        .0
+        .push(Action::InsertVoxel { voxel, position });
     Browser::trigger_grid_update();
 }
 
-fn remove_voxel(hit: &VoxelHit, grid: &SharedGrid, mut voxels: VoxelCommands) {
+fn spawn_voxel(
+    position: &GridPosition,
+    voxel: &Voxel,
+    grid: &SharedGrid,
+    voxels: &mut VoxelCommands,
+) {
+    voxels.spawn(position.clone(), voxel.clone());
+    grid.0.borrow_mut().insert(position.clone(), voxel.clone());
+}
+
+fn delete_voxel(
+    hit: &VoxelHit,
+    grid: &SharedGrid,
+    voxels: &mut VoxelCommands,
+    edit_transaction: &mut EditTransaction,
+) {
     let position = hit.position.clone();
 
     if position.y < 0 || position.y >= GRID_SIZE {
@@ -395,19 +445,43 @@ fn remove_voxel(hit: &VoxelHit, grid: &SharedGrid, mut voxels: VoxelCommands) {
         return;
     }
 
-    grid.0.borrow_mut().remove(&position);
-    voxels.despawn(position.clone());
-    Browser::trigger_grid_update();
-}
-
-fn load_grid(mut file: ResMut<VoxelFile>, grid: ResMut<SharedGrid>, mut voxels: VoxelCommands) {
-    let Some(ref voxel_file) = file.0.clone() else {
+    let Some(voxel) = despawn_voxel(&position, grid, voxels) else {
         return;
     };
 
-    file.0 = None;
+    edit_transaction.0.push(Action::DeleteVoxel {
+        voxel: voxel,
+        position,
+    });
+    Browser::trigger_grid_update();
+}
 
-    let asset = match VoxelAsset::from_bytes(voxel_file) {
+fn despawn_voxel(
+    position: &GridPosition,
+    grid: &SharedGrid,
+    voxels: &mut VoxelCommands,
+) -> Option<Voxel> {
+    if let Some(voxel) = grid.0.borrow_mut().remove(&position) {
+        voxels.despawn(position.clone());
+        Some(voxel)
+    } else {
+        None
+    }
+}
+
+fn load_file(
+    mut voxel_file: ResMut<VoxelFile>,
+    grid: ResMut<SharedGrid>,
+    mut voxels: VoxelCommands,
+    mut history: ResMut<History>,
+) {
+    let Some(ref file) = voxel_file.file.clone() else {
+        return;
+    };
+
+    voxel_file.file = None;
+
+    let asset = match VoxelAsset::from_bytes(file) {
         Ok(asset) => asset,
         Err(e) => {
             log::warn!("failed to load asset: {e:#?}");
@@ -420,15 +494,25 @@ fn load_grid(mut file: ResMut<VoxelFile>, grid: ResMut<SharedGrid>, mut voxels: 
         return;
     }
 
-    let next_grid = Forge::denormalize_grid(&asset.grid);
-    let prev_grid = grid.0.borrow_mut().drain().collect::<Vec<_>>();
+    if !voxel_file.initial_load.is_some_and(|v| v) {
+        history.insert_actions(vec![Action::LoadGrid {
+            prev_grid: Forge::normalize_grid(&grid.0.borrow()),
+            next_grid: asset.grid.clone(),
+        }]);
+    }
+
+    load_grid(asset, &grid, &mut voxels);
+}
+
+fn load_grid(asset: VoxelAsset, grid: &SharedGrid, voxels: &mut VoxelCommands) {
+    let prev_grid = grid.0.borrow().clone().into_iter().collect::<Vec<_>>();
 
     for (position, _) in prev_grid {
         voxels.despawn(position);
     }
 
     voxels.spawn_asset(
-        asset,
+        asset.clone(),
         &GridPosition {
             x: -GRID_SIZE / 2,
             y: 0,
@@ -436,6 +520,84 @@ fn load_grid(mut file: ResMut<VoxelFile>, grid: ResMut<SharedGrid>, mut voxels: 
         },
     );
 
-    *grid.0.borrow_mut() = next_grid;
+    *grid.0.borrow_mut() = Forge::denormalize_grid(&asset.grid);
     Browser::trigger_grid_update();
+}
+
+fn undo(
+    mut history: ResMut<History>,
+    input: Input,
+    grid: ResMut<SharedGrid>,
+    mut voxels: VoxelCommands,
+) {
+    if primary_modifier_pressed(&input)
+        && !input.pressed(InputButton::Modifier(Modifier::Shift))
+        && input.just_pressed(InputButton::Key(KeyCode::KeyZ))
+    {
+        let Some(actions) = history.undo() else {
+            return;
+        };
+
+        for action in actions {
+            match action {
+                Action::InsertVoxel { position, .. } => {
+                    despawn_voxel(&position, &grid, &mut voxels);
+                }
+                Action::DeleteVoxel { position, voxel } => {
+                    spawn_voxel(&position, &voxel, &grid, &mut voxels);
+                }
+                Action::LoadGrid { prev_grid, .. } => {
+                    load_grid(VoxelAsset { grid: prev_grid }, &grid, &mut voxels);
+                }
+            };
+        }
+
+        Browser::trigger_grid_update();
+    }
+}
+
+fn redo(
+    mut history: ResMut<History>,
+    input: Input,
+    grid: ResMut<SharedGrid>,
+    mut voxels: VoxelCommands,
+) {
+    if primary_modifier_pressed(&input)
+        && input.pressed(InputButton::Modifier(Modifier::Shift))
+        && input.just_pressed(InputButton::Key(KeyCode::KeyZ))
+    {
+        let Some(actions) = history.redo() else {
+            return;
+        };
+
+        for action in actions {
+            match action {
+                Action::InsertVoxel { position, voxel } => {
+                    spawn_voxel(&position, &voxel, &grid, &mut voxels);
+                }
+                Action::DeleteVoxel { position, .. } => {
+                    despawn_voxel(&position, &grid, &mut voxels);
+                }
+                Action::LoadGrid { next_grid, .. } => {
+                    load_grid(VoxelAsset { grid: next_grid }, &grid, &mut voxels);
+                }
+            };
+        }
+
+        Browser::trigger_grid_update();
+    }
+}
+
+fn primary_modifier_pressed(input: &Input) -> bool {
+    if is_macos() {
+        input.pressed(InputButton::Modifier(Modifier::Super))
+    } else {
+        input.pressed(InputButton::Modifier(Modifier::Control))
+    }
+}
+
+fn is_macos() -> bool {
+    wgpu::web_sys::window()
+        .map(|window| window.navigator().platform())
+        .is_some_and(|platform| platform.unwrap_or_default().starts_with("Mac"))
 }

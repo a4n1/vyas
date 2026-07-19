@@ -1,4 +1,10 @@
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, hash_map},
+    iter::FromIterator,
+    ops::{Deref, DerefMut},
+};
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     color::{Color, Srgb},
@@ -6,11 +12,108 @@ use crate::{
     voxel::Voxel,
 };
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct VoxelAsset {
     pub grid: Grid,
 }
 
-pub type Grid = HashMap<GridPosition, Voxel>;
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Grid(HashMap<GridPosition, Voxel>);
+
+impl Grid {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(HashMap::with_capacity(capacity))
+    }
+
+    pub fn into_inner(self) -> HashMap<GridPosition, Voxel> {
+        self.0
+    }
+}
+
+impl Serialize for Grid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.iter().collect::<Vec<_>>().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Grid {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Vec::<(GridPosition, Voxel)>::deserialize(deserializer)
+            .map(|entries| Self(entries.into_iter().collect()))
+    }
+}
+
+impl Deref for Grid {
+    type Target = HashMap<GridPosition, Voxel>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Grid {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<HashMap<GridPosition, Voxel>> for Grid {
+    fn from(grid: HashMap<GridPosition, Voxel>) -> Self {
+        Self(grid)
+    }
+}
+
+impl From<Grid> for HashMap<GridPosition, Voxel> {
+    fn from(grid: Grid) -> Self {
+        grid.0
+    }
+}
+
+impl FromIterator<(GridPosition, Voxel)> for Grid {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (GridPosition, Voxel)>,
+    {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for Grid {
+    type Item = (GridPosition, Voxel);
+    type IntoIter = hash_map::IntoIter<GridPosition, Voxel>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Grid {
+    type Item = (&'a GridPosition, &'a Voxel);
+    type IntoIter = hash_map::Iter<'a, GridPosition, Voxel>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Grid {
+    type Item = (&'a GridPosition, &'a mut Voxel);
+    type IntoIter = hash_map::IterMut<'a, GridPosition, Voxel>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter_mut()
+    }
+}
 
 #[derive(Debug)]
 pub enum VoxelAssetError {
@@ -26,7 +129,7 @@ impl VoxelAsset {
     }
 
     fn parse_csv(data: &str) -> Result<Grid, VoxelAssetError> {
-        let mut grid = HashMap::new();
+        let mut grid = Grid::default();
 
         for (idx, line) in data.lines().enumerate().skip(1) {
             if line.trim().is_empty() {

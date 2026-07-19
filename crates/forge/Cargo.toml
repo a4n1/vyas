@@ -15,10 +15,13 @@ wasm-opt = ["-O", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
 
 [dependencies]
 vyas = { path = "../vyas" }
+base64.workspace = true
 log.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 serde-wasm-bindgen.workspace = true
 rand = "0.10.1"
+wgpu.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true

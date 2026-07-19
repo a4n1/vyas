@@ -37,7 +37,7 @@ export function Canvas() {
     }
 
     const csv = atob(lastSave);
-    forge()?.load_grid(new TextEncoder().encode(csv));
+    forge()?.load_grid(new TextEncoder().encode(csv), true);
   });
 
   createEffect(() => {

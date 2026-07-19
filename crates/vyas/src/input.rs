@@ -23,6 +23,7 @@ pub type ScrollDelta = winit::event::MouseScrollDelta;
 pub enum InputButton {
     Key(KeyCode),
     Mouse(MouseButton),
+    Modifier(Modifier),
 }
 
 impl From<KeyCode> for InputButton {
@@ -35,6 +36,14 @@ impl From<MouseButton> for InputButton {
     fn from(button: MouseButton) -> Self {
         Self::Mouse(button)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Modifier {
+    Shift,
+    Control,
+    Alt,
+    Super,
 }
 
 #[derive(Default)]
@@ -59,17 +68,44 @@ impl InputState {
     pub(crate) fn insert_pressed(&mut self, input_button: InputButton, pressed: bool) {
         if pressed {
             self.just_pressed.insert(input_button);
+            self.pressed.insert(input_button, pressed);
+        } else {
+            self.pressed.remove(&input_button);
         }
-
-        self.pressed.insert(input_button, pressed);
     }
 
     pub fn pressed(&self, input_button: InputButton) -> bool {
-        self.pressed.get(&input_button).is_some_and(|v| *v)
+        match input_button {
+            InputButton::Modifier(modifier) => {
+                Self::modifier_keys(modifier).into_iter().any(|key| {
+                    self.pressed
+                        .get(&InputButton::Key(key))
+                        .copied()
+                        .unwrap_or(false)
+                })
+            }
+
+            button => self.pressed.get(&button).copied().unwrap_or(false),
+        }
     }
 
     pub fn just_pressed(&self, input_button: InputButton) -> bool {
-        self.just_pressed.contains(&input_button)
+        match input_button {
+            InputButton::Modifier(modifier) => Self::modifier_keys(modifier)
+                .into_iter()
+                .any(|key| self.just_pressed.contains(&InputButton::Key(key))),
+
+            button => self.just_pressed.contains(&button),
+        }
+    }
+
+    fn modifier_keys(modifier: Modifier) -> [KeyCode; 2] {
+        match modifier {
+            Modifier::Shift => [KeyCode::ShiftLeft, KeyCode::ShiftRight],
+            Modifier::Control => [KeyCode::ControlLeft, KeyCode::ControlRight],
+            Modifier::Alt => [KeyCode::AltLeft, KeyCode::AltRight],
+            Modifier::Super => [KeyCode::SuperLeft, KeyCode::SuperRight],
+        }
     }
 
     pub(crate) fn set_mouse_position(

@@ -191,6 +191,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "base64"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
+
+[[package]]
 name = "bit-set"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -703,6 +709,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 name = "forge"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "console_error_panic_hook",
  "console_log",
  "getrandom 0.4.2",
@@ -710,9 +717,11 @@ dependencies = [
  "rand",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
  "vyas",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wgpu",
 ]
 
 [[package]]
