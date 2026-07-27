@@ -1,41 +1,17 @@
+mod browser;
+mod grid;
 mod history;
 mod storage;
-
-use std::{cell::RefCell, rc::Rc};
 
 use vyas::prelude::*;
 use wasm_bindgen::prelude::*;
 
+use crate::grid::{GRID_SIZE, Grid};
 use crate::history::{Action, History};
-
-const GRID_SIZE: i32 = 64;
 
 struct InsertPlane(Option<i32>);
 
 struct CursorState(CursorMode);
-
-#[wasm_bindgen(module = "/src/browser.js")]
-extern "C" {
-    #[wasm_bindgen(js_name = onGridUpdate)]
-    fn on_grid_update();
-}
-
-struct Browser;
-
-impl Browser {
-    fn trigger_grid_update() {
-        on_grid_update();
-    }
-}
-
-#[derive(Clone, Default)]
-struct SharedGrid(Rc<RefCell<Grid>>);
-
-impl SharedGrid {
-    fn new() -> Self {
-        Self::default()
-    }
-}
 
 #[wasm_bindgen]
 pub enum CursorMode {
@@ -53,7 +29,7 @@ struct EditTransaction(Vec<Action>);
 #[wasm_bindgen]
 pub struct Forge {
     client: SharedClient,
-    grid: SharedGrid,
+    grid: Grid,
 }
 
 #[wasm_bindgen]
@@ -63,43 +39,53 @@ impl Forge {
         console_error_panic_hook::set_once();
 
         let client = SharedClient::new();
-        let grid = SharedGrid::new();
+        let grid = Grid::new();
 
-        App::new()
-            .set_client(Some(client.clone()))
-            .set_camera(CameraConfig {
-                position: WorldPosition {
-                    x: -120.0,
-                    y: 80.0,
-                    z: -120.0,
-                },
-                looking_at: WorldPosition {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                fov: 45.0,
-            })
-            .insert_resource(Color::Srgb(Srgb { r: 0, g: 0, b: 0 }))
-            .insert_resource(CursorState(CursorMode::Insert))
-            .insert_resource(InsertPlane(Some(0)))
-            .insert_resource(VoxelFile {
-                file: None,
-                initial_load: None,
-            })
-            .insert_resource(History::new())
-            .insert_resource(EditTransaction(Vec::new()))
-            .insert_resource(grid.clone())
-            .add_systems(Startup, draw_scene)
-            .add_systems(Update, update_camera_yaw)
-            .add_systems(Update, update_camera_pitch)
-            .add_systems(Update, update_camera_zoom)
-            .add_systems(Update, update_camera_position)
-            .add_systems(Update, edit_voxel)
-            .add_systems(Update, load_file)
-            .add_systems(Update, undo)
-            .add_systems(Update, redo)
-            .run();
+        {
+            let client = client.clone();
+            let grid = grid.clone();
+
+            wasm_bindgen_futures::spawn_local(async move {
+                grid.init().await;
+
+                App::new()
+                    .set_client(Some(client))
+                    .set_camera(CameraConfig {
+                        position: WorldPosition {
+                            x: -120.0,
+                            y: 80.0,
+                            z: -120.0,
+                        },
+                        looking_at: WorldPosition {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        fov: 45.0,
+                    })
+                    .insert_resource(Color::Srgb(Srgb { r: 0, g: 0, b: 0 }))
+                    .insert_resource(CursorState(CursorMode::Insert))
+                    .insert_resource(InsertPlane(Some(0)))
+                    .insert_resource(VoxelFile {
+                        file: None,
+                        initial_load: None,
+                    })
+                    .insert_resource(History::new())
+                    .insert_resource(EditTransaction(Vec::new()))
+                    .insert_resource(grid)
+                    .add_systems(Startup, draw_scene)
+                    .add_systems(Startup, load_initial_grid)
+                    .add_systems(Update, update_camera_yaw)
+                    .add_systems(Update, update_camera_pitch)
+                    .add_systems(Update, update_camera_zoom)
+                    .add_systems(Update, update_camera_position)
+                    .add_systems(Update, edit_voxel)
+                    .add_systems(Update, load_file)
+                    .add_systems(Update, undo)
+                    .add_systems(Update, redo)
+                    .run();
+            });
+        }
 
         Self { client, grid }
     }
@@ -122,8 +108,7 @@ impl Forge {
     }
 
     pub fn export_grid(&self) -> Option<JsValue> {
-        let grid = self.grid.0.borrow();
-        let grid = Self::normalize_grid(&grid);
+        let grid = &self.grid.normalize();
 
         let serialized_result = match serde_wasm_bindgen::to_value(&grid) {
             Ok(result) => Some(result),
@@ -134,40 +119,6 @@ impl Forge {
         };
 
         serialized_result
-    }
-
-    fn normalize_grid(grid: &Grid) -> Grid {
-        grid.iter()
-            .map(|(position, voxel)| {
-                let position = GridPosition {
-                    x: position.x + GRID_SIZE / 2,
-                    y: position.y,
-                    z: position.z + GRID_SIZE / 2,
-                };
-                (position, voxel.clone())
-            })
-            .collect()
-    }
-
-    fn denormalize_grid(grid: &Grid) -> Grid {
-        grid.iter()
-            .map(|(position, voxel)| {
-                let position = GridPosition {
-                    x: position.x - GRID_SIZE / 2,
-                    y: position.y,
-                    z: position.z - GRID_SIZE / 2,
-                };
-                (position, voxel.clone())
-            })
-            .collect()
-    }
-
-    fn grid_in_bounds(grid: &Grid) -> bool {
-        grid.keys().all(|position| {
-            (0..GRID_SIZE).contains(&position.x)
-                && (0..GRID_SIZE).contains(&position.y)
-                && (0..GRID_SIZE).contains(&position.z)
-        })
     }
 }
 
@@ -185,6 +136,12 @@ fn draw_scene(mut voxel: VoxelCommands) {
                 },
             );
         }
+    }
+}
+
+fn load_initial_grid(grid: Res<Grid>, mut voxels: VoxelCommands) {
+    for (position, voxel) in grid.into_iter() {
+        voxels.spawn(position, voxel);
     }
 }
 
@@ -339,7 +296,7 @@ fn edit_voxel(
     cursor_state: Res<CursorState>,
     mut edit_transaction: ResMut<EditTransaction>,
     mut insert_plane: ResMut<InsertPlane>,
-    grid: Res<SharedGrid>,
+    grid: Res<Grid>,
     mut history: ResMut<History>,
 ) {
     if !input.pressed(InputButton::Mouse(MouseButton::Left)) {
@@ -365,14 +322,14 @@ fn edit_voxel(
             &mut edit_transaction,
         ),
         CursorMode::Remove => delete_voxel(hit, &grid, &mut voxels, &mut edit_transaction),
-    }
+    };
 }
 
 fn insert_voxel(
     hit: &VoxelHit,
     color: &Color,
     insert_plane: &mut InsertPlane,
-    grid: &SharedGrid,
+    grid: &Grid,
     voxels: &mut VoxelCommands,
     edit_transaction: &mut EditTransaction,
 ) {
@@ -400,7 +357,7 @@ fn insert_voxel(
         color: color.clone(),
     };
 
-    if let Some(v) = grid.0.borrow_mut().get(&position)
+    if let Some(v) = grid.borrow().get(&position)
         && v == &voxel
     {
         return;
@@ -412,22 +369,16 @@ fn insert_voxel(
     edit_transaction
         .0
         .push(Action::InsertVoxel { voxel, position });
-    Browser::trigger_grid_update();
 }
 
-fn spawn_voxel(
-    position: &GridPosition,
-    voxel: &Voxel,
-    grid: &SharedGrid,
-    voxels: &mut VoxelCommands,
-) {
+fn spawn_voxel(position: &GridPosition, voxel: &Voxel, grid: &Grid, voxels: &mut VoxelCommands) {
     voxels.spawn(position.clone(), voxel.clone());
-    grid.0.borrow_mut().insert(position.clone(), voxel.clone());
+    grid.insert(position.clone(), voxel.clone());
 }
 
 fn delete_voxel(
     hit: &VoxelHit,
-    grid: &SharedGrid,
+    grid: &Grid,
     voxels: &mut VoxelCommands,
     edit_transaction: &mut EditTransaction,
 ) {
@@ -453,15 +404,14 @@ fn delete_voxel(
         voxel: voxel,
         position,
     });
-    Browser::trigger_grid_update();
 }
 
 fn despawn_voxel(
     position: &GridPosition,
-    grid: &SharedGrid,
+    grid: &Grid,
     voxels: &mut VoxelCommands,
 ) -> Option<Voxel> {
-    if let Some(voxel) = grid.0.borrow_mut().remove(&position) {
+    if let Some(voxel) = grid.remove(&position) {
         voxels.despawn(position.clone());
         Some(voxel)
     } else {
@@ -471,7 +421,7 @@ fn despawn_voxel(
 
 fn load_file(
     mut voxel_file: ResMut<VoxelFile>,
-    grid: ResMut<SharedGrid>,
+    mut grid: ResMut<Grid>,
     mut voxels: VoxelCommands,
     mut history: ResMut<History>,
 ) {
@@ -489,25 +439,23 @@ fn load_file(
         }
     };
 
-    if !Forge::grid_in_bounds(&asset.grid) {
+    if !grid::grid_in_bounds(&asset.grid) {
         log::warn!("failed to load asset: grid out of bounds");
         return;
     }
 
     if !voxel_file.initial_load.is_some_and(|v| v) {
         history.insert_actions(vec![Action::LoadGrid {
-            prev_grid: Forge::normalize_grid(&grid.0.borrow()),
+            prev_grid: grid.normalize(),
             next_grid: asset.grid.clone(),
         }]);
     }
 
-    load_grid(asset, &grid, &mut voxels);
+    load_grid(asset, &mut grid, &mut voxels);
 }
 
-fn load_grid(asset: VoxelAsset, grid: &SharedGrid, voxels: &mut VoxelCommands) {
-    let prev_grid = grid.0.borrow().clone().into_iter().collect::<Vec<_>>();
-
-    for (position, _) in prev_grid {
+fn load_grid(asset: VoxelAsset, grid: &mut Grid, voxels: &mut VoxelCommands) {
+    for (position, _) in grid.into_iter() {
         voxels.despawn(position);
     }
 
@@ -520,14 +468,13 @@ fn load_grid(asset: VoxelAsset, grid: &SharedGrid, voxels: &mut VoxelCommands) {
         },
     );
 
-    *grid.0.borrow_mut() = Forge::denormalize_grid(&asset.grid);
-    Browser::trigger_grid_update();
+    grid.set(grid::denormalize_grid(&asset.grid));
 }
 
 fn undo(
     mut history: ResMut<History>,
     input: Input,
-    grid: ResMut<SharedGrid>,
+    mut grid: ResMut<Grid>,
     mut voxels: VoxelCommands,
 ) {
     if primary_modifier_pressed(&input)
@@ -547,19 +494,17 @@ fn undo(
                     spawn_voxel(&position, &voxel, &grid, &mut voxels);
                 }
                 Action::LoadGrid { prev_grid, .. } => {
-                    load_grid(VoxelAsset { grid: prev_grid }, &grid, &mut voxels);
+                    load_grid(VoxelAsset { grid: prev_grid }, &mut grid, &mut voxels);
                 }
             };
         }
-
-        Browser::trigger_grid_update();
     }
 }
 
 fn redo(
     mut history: ResMut<History>,
     input: Input,
-    grid: ResMut<SharedGrid>,
+    mut grid: ResMut<Grid>,
     mut voxels: VoxelCommands,
 ) {
     if primary_modifier_pressed(&input)
@@ -579,12 +524,10 @@ fn redo(
                     despawn_voxel(&position, &grid, &mut voxels);
                 }
                 Action::LoadGrid { next_grid, .. } => {
-                    load_grid(VoxelAsset { grid: next_grid }, &grid, &mut voxels);
+                    load_grid(VoxelAsset { grid: next_grid }, &mut grid, &mut voxels);
                 }
             };
         }
-
-        Browser::trigger_grid_update();
     }
 }
 

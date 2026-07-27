@@ -16,6 +16,7 @@ wasm-opt = ["-O", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
 [dependencies]
 vyas = { path = "../vyas" }
 base64.workspace = true
+gloo-net.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
