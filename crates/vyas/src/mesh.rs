@@ -44,7 +44,7 @@ fn build_voxel(
     voxels: &HashMap<GridPosition, Voxel>,
     render_config: &RenderConfig,
 ) -> (Vec<Vertex>, Vec<u32>) {
-    let color = voxel.color.linear_rgb();
+    let color = voxel.color.linear_rgba();
 
     let half_size = render_config.voxel_size * 0.5;
 
@@ -132,7 +132,7 @@ fn generate_quad(
     z: f32,
     half_size: f32,
     indices_index: u32,
-    color: u32,
+    color: [u8; 4],
 ) -> (Vec<Vertex>, Vec<u32>) {
     let corners = match direction {
         Direction::Front => [

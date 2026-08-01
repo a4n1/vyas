@@ -24,13 +24,14 @@ impl Color {
         }
     }
 
-    pub(crate) fn linear_rgb(&self) -> u32 {
+    pub(crate) fn linear_rgba(&self) -> [u8; 4] {
         match self {
-            Color::Srgb(srgb) => {
-                ((Self::srgb_component_to_linear(srgb.r) as u32) << 16)
-                    | ((Self::srgb_component_to_linear(srgb.g) as u32) << 8)
-                    | (Self::srgb_component_to_linear(srgb.b) as u32)
-            }
+            Color::Srgb(srgb) => [
+                Self::srgb_component_to_linear(srgb.r),
+                Self::srgb_component_to_linear(srgb.g),
+                Self::srgb_component_to_linear(srgb.b),
+                255,
+            ],
         }
     }
 

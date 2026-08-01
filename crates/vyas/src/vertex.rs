@@ -2,7 +2,7 @@
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct Vertex {
     pub(crate) position: [f32; 3],
-    pub(crate) color: u32,
+    pub(crate) color: [u8; 4],
 }
 
 impl Vertex {
@@ -19,7 +19,7 @@ impl Vertex {
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Uint32,
+                    format: wgpu::VertexFormat::Unorm8x4,
                 },
             ],
         }
