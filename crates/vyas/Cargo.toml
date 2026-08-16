@@ -25,13 +25,6 @@ winit.workspace = true
 [dev-dependencies]
 criterion = "0.8"
 
-[features]
-bench = []
-
-[[bench]]
-name = "generate_mesh"
-harness = false
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_log.workspace = true
 console_error_panic_hook.workspace = true
