@@ -1,8 +1,9 @@
 pub mod app;
 pub mod asset;
+pub mod brickgrid;
+pub mod brickmap;
 pub mod buffer;
 pub mod camera;
-pub mod chunk;
 pub mod client;
 pub mod color;
 pub mod config;
@@ -10,13 +11,10 @@ pub mod dda;
 pub mod ecs;
 pub mod engine;
 pub mod fps;
-pub mod frustum;
 pub mod graphics;
 pub mod input;
-pub mod mesh;
 pub mod pipeline;
 pub mod position;
-pub mod vertex;
 pub mod voxel;
 
 pub mod prelude {

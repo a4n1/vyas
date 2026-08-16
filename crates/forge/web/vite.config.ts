@@ -9,6 +9,18 @@ export default defineConfig({
     solidStart(),
     topLevelAwait(),
     wasm(),
+    {
+      name: "reload-wasm",
+      handleHotUpdate({ file, server }) {
+        if (file.startsWith("pkg")) {
+          server.ws.send({
+            type: "full-reload",
+          });
+
+          return [];
+        }
+      },
+    },
     nitro({
       prerender: {
         routes: ["/"],

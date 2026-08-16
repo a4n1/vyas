@@ -1,11 +1,17 @@
-use std::{iter, sync::Arc};
+use std::{
+    iter,
+    sync::{Arc, mpsc},
+};
 
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    buffer::{ChunkBuffer, ChunkBufferItem},
-    chunk::{Chunk, ChunkMap},
-    config::RenderConfig,
+    brickgrid::{
+        Brickgrid, BrickgridCell, BrickgridCellData, Feedback, FeedbackGpu, VisibleBrickmap,
+    },
+    buffer::BrickmapBuffer,
+    color::ColorPaletteState,
+    config::RenderConfigState,
     ecs::World,
     pipeline::Pipeline,
 };
@@ -24,12 +30,12 @@ pub(crate) struct Graphics {
 
 struct State {
     is_surface_configured: bool,
-    chunk_buffer: ChunkBuffer,
-    draw_chunks: Vec<ChunkBufferItem>,
+    brickmap_buffer: BrickmapBuffer,
+    feedback_rx: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
 }
 
 impl Graphics {
-    pub(crate) async fn new(window: Arc<Window>, render_config: &RenderConfig) -> Self {
+    pub(crate) async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
         let instance_descriptor = wgpu::InstanceDescriptor {
@@ -70,10 +76,7 @@ impl Graphics {
                 label: Some("device"),
                 required_features: wgpu::Features::empty(),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                #[cfg(not(target_arch = "wasm32"))]
-                required_limits: wgpu::Limits::default(),
-                #[cfg(target_arch = "wasm32")]
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
             })
@@ -121,8 +124,8 @@ impl Graphics {
             queue,
             state: State {
                 is_surface_configured: false,
-                chunk_buffer: ChunkBuffer::new(render_config),
-                draw_chunks: Vec::new(),
+                brickmap_buffer: BrickmapBuffer::new(),
+                feedback_rx: None,
             },
         }
     }
@@ -152,35 +155,92 @@ impl Graphics {
     }
 
     pub(crate) fn update(&mut self, pipeline: &Pipeline, world: &World) {
-        let chunk_map = world.resource::<ChunkMap>();
-        let render_config = *world.resource::<RenderConfig>();
-        let chunks = chunk_map.visible_chunk_entities(world);
+        let brickgrid = world.resource::<Brickgrid>();
+        let visible_brickmaps = brickgrid.visible_brickmaps(world);
 
-        self.state.draw_chunks = Vec::with_capacity(chunks.len());
+        let render_config = *world.resource::<RenderConfigState>();
+        let color_palette = world.resource::<ColorPaletteState>();
 
-        for entity in &chunks {
-            let mut chunk = world
-                .get_mut::<Chunk>(*entity)
-                .expect("entity should have a chunk component");
+        let mut brickgrid_data: Vec<BrickgridCell> =
+            vec![BrickgridCellData::Empty.into(); render_config.brickgrid_size.pow(3) as usize];
 
-            if let Some(buffer_chunk) = self.state.chunk_buffer.insert(
-                entity,
-                &mut chunk,
+        let feedback = self.read_feedback(&pipeline.feedback_result_buffer);
+
+        for VisibleBrickmap {
+            mut brickmap,
+            brickgrid_index: index,
+        } in visible_brickmaps
+        {
+            let cell_data = self.state.brickmap_buffer.insert(
+                &mut brickmap,
+                index,
+                &color_palette,
+                &feedback,
                 pipeline,
                 &self.queue,
-                &render_config,
-            ) {
-                self.state.draw_chunks.push(buffer_chunk);
-            }
+            );
+
+            brickgrid_data[index] = cell_data.into();
         }
 
-        self.state.chunk_buffer.cleanup();
+        self.queue.write_buffer(
+            &pipeline.brickgrid_buffer,
+            0,
+            bytemuck::cast_slice(&brickgrid_data),
+        );
 
         self.queue.write_buffer(
             &pipeline.camera_buffer,
             0,
-            bytemuck::cast_slice(&[pipeline.camera_uniform]),
+            bytemuck::cast_slice(&[pipeline.camera]),
         );
+
+        self.queue.write_buffer(
+            &pipeline.render_config_buffer,
+            0,
+            bytemuck::cast_slice(&[pipeline.render_config.to_gpu()]),
+        );
+
+        self.queue.write_buffer(
+            &pipeline.color_palette_buffer,
+            0,
+            bytemuck::cast_slice(&color_palette.to_gpu()),
+        );
+    }
+
+    fn read_feedback(&mut self, buffer: &wgpu::Buffer) -> Feedback {
+        let _ = self.device.poll(wgpu::PollType::Poll);
+
+        let result = self
+            .state
+            .feedback_rx
+            .as_ref()
+            .map(|receiver| receiver.try_recv());
+
+        match result {
+            Some(Ok(Ok(()))) => {
+                let mapped = buffer.slice(..).get_mapped_range();
+                let feedback_gpu = bytemuck::from_bytes::<FeedbackGpu>(&mapped);
+                let feedback = Feedback::from(feedback_gpu);
+
+                drop(mapped);
+                buffer.unmap();
+                self.state.feedback_rx = None;
+
+                feedback
+            }
+            Some(Ok(Err(error))) => {
+                log::warn!("failed to map feedback buffer: {error}");
+                self.state.feedback_rx = None;
+                Feedback::default()
+            }
+            Some(Err(mpsc::TryRecvError::Disconnected)) => {
+                log::warn!("feedback buffer mapping channel disconnected");
+                self.state.feedback_rx = None;
+                Feedback::default()
+            }
+            Some(Err(mpsc::TryRecvError::Empty)) | None => Feedback::default(),
+        }
     }
 
     pub(crate) fn render(&mut self, pipeline: &Pipeline) {
@@ -226,11 +286,40 @@ impl Graphics {
                 label: Some("render-encoder"),
             });
 
+        encoder.clear_buffer(&pipeline.feedback_buffer, 0, None);
+
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("raytrace-pass"),
+            timestamp_writes: None,
+        });
+
+        compute_pass.set_pipeline(&pipeline.compute_pipeline);
+        compute_pass.set_bind_group(0, &pipeline.scene_bind_group, &[]);
+        compute_pass.dispatch_workgroups(
+            self.surface_config.width.div_ceil(8),
+            self.surface_config.height.div_ceil(8),
+            1,
+        );
+
+        drop(compute_pass);
+
+        let read_feedback = self.state.feedback_rx.is_none();
+
+        if read_feedback {
+            encoder.copy_buffer_to_buffer(
+                &pipeline.feedback_buffer,
+                0,
+                &pipeline.feedback_result_buffer,
+                0,
+                pipeline.feedback_result_buffer.size(),
+            );
+        }
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("render-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &pipeline.multisample_view,
-                resolve_target: Some(&view),
+                view: &view,
+                resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
                         r: 0.01,
@@ -238,49 +327,38 @@ impl Graphics {
                         b: 0.01,
                         a: 1.0,
                     }),
-                    store: wgpu::StoreOp::Discard,
+                    store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
             })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &pipeline.depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(0.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
+            depth_stencil_attachment: None,
             occlusion_query_set: None,
             timestamp_writes: None,
             multiview_mask: None,
         });
 
         render_pass.set_pipeline(&pipeline.render_pipeline);
-        render_pass.set_bind_group(0, &pipeline.camera_bind_group, &[]);
+        render_pass.set_bind_group(0, &pipeline.render_bind_group, &[]);
 
-        for draw_chunk in &self.state.draw_chunks {
-            render_pass.set_vertex_buffer(
-                0,
-                pipeline.vertex_buffer.slice(
-                    draw_chunk.vertex_allocation.offset
-                        ..draw_chunk.vertex_allocation.offset + draw_chunk.vertex_byte_len,
-                ),
-            );
-
-            render_pass.set_index_buffer(
-                pipeline.index_buffer.slice(
-                    draw_chunk.index_allocation.offset
-                        ..draw_chunk.index_allocation.offset + draw_chunk.index_byte_len,
-                ),
-                wgpu::IndexFormat::Uint32,
-            );
-
-            render_pass.draw_indexed(0..draw_chunk.mesh_index_count, 0, 0..1);
-        }
+        render_pass.draw(0..3, 0..1);
 
         drop(render_pass);
 
         self.queue.submit(iter::once(encoder.finish()));
+
+        if read_feedback {
+            let (tx, rx) = mpsc::channel();
+
+            pipeline.feedback_result_buffer.slice(..).map_async(
+                wgpu::MapMode::Read,
+                move |result| {
+                    let _ = tx.send(result);
+                },
+            );
+
+            self.state.feedback_rx = Some(rx);
+        }
+
         output.present();
         self.window.request_redraw();
     }

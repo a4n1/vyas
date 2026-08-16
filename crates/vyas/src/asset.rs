@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, hash_map},
+    collections::{HashMap, HashSet, hash_map},
     iter::FromIterator,
     ops::{Deref, DerefMut},
 };
@@ -7,7 +7,7 @@ use std::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    color::{Color, Srgb},
+    color::{Color, PaletteColor, Srgb},
     position::GridPosition,
     voxel::Voxel,
 };
@@ -15,6 +15,7 @@ use crate::{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VoxelAsset {
     pub grid: Grid,
+    pub colors: Vec<PaletteColor>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -124,12 +125,13 @@ pub enum VoxelAssetError {
 impl VoxelAsset {
     pub fn from_bytes(bytes: &[u8]) -> Result<VoxelAsset, VoxelAssetError> {
         let data = str::from_utf8(bytes).map_err(|e| VoxelAssetError::Utf8Error { source: e })?;
-        let grid = Self::parse_csv(data)?;
-        Ok(VoxelAsset { grid })
+        Self::parse_csv(data)
     }
 
-    fn parse_csv(data: &str) -> Result<Grid, VoxelAssetError> {
+    fn parse_csv(data: &str) -> Result<VoxelAsset, VoxelAssetError> {
         let mut grid = Grid::default();
+
+        let mut colors: HashSet<PaletteColor> = HashSet::new();
 
         for (idx, line) in data.lines().enumerate().skip(1) {
             if line.trim().is_empty() {
@@ -142,15 +144,18 @@ impl VoxelAsset {
                     source: e,
                 })?;
 
-            grid.insert(
-                GridPosition { x, y, z },
-                Voxel {
-                    color: Color::Srgb(Srgb { r, g, b }),
-                },
-            );
+            let color = Color::Srgb(Srgb { r, g, b });
+
+            let palette_color = PaletteColor::from(color);
+            colors.insert(palette_color.clone());
+
+            grid.insert(GridPosition { x, y, z }, Voxel { palette_color });
         }
 
-        Ok(grid)
+        Ok(VoxelAsset {
+            grid,
+            colors: colors.into_iter().collect::<Vec<PaletteColor>>(),
+        })
     }
 }
 

@@ -1,17 +1,16 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    asset::VoxelAsset,
-    chunk::{Chunk, ChunkMap},
-    color::Color,
-    config::RenderConfig,
+    brickgrid::Brickgrid,
+    brickmap::Brickmap,
+    color::PaletteColor,
     ecs::{CommandQueue, SystemParam, World},
     position::GridPosition,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Voxel {
-    pub color: Color,
+    pub palette_color: PaletteColor,
 }
 
 pub struct VoxelCommands {
@@ -22,30 +21,27 @@ impl VoxelCommands {
     pub fn spawn(&mut self, voxel_position: GridPosition, voxel: Voxel) {
         let queue = unsafe { &*self.queue };
         queue.borrow_mut().push(Box::new(move |world| {
-            let render_config = *world.resource::<RenderConfig>();
-            let chunk_position = voxel_position.to_chunk_position(&render_config);
-            let local_position = voxel_position.to_local_position(&render_config);
+            let brickmap_position = voxel_position.to_brickmap_position();
+            let local_position = voxel_position.to_local_position();
 
             let entity = {
-                let chunk_map = world.resource::<ChunkMap>();
-                chunk_map.get(&chunk_position).copied()
+                let brickgrid = world.resource::<Brickgrid>();
+                brickgrid.get(&brickmap_position).copied()
             };
 
             if let Some(entity) = entity {
-                let mut chunk = world
-                    .get_mut::<Chunk>(entity)
-                    .expect("failed to get chunk entity");
-                chunk.set_voxel(local_position, voxel);
+                let mut brickmap = world
+                    .get_mut::<Brickmap>(entity)
+                    .expect("failed to get brickmap entity");
+                brickmap.set_voxel(local_position, voxel);
             } else {
-                let mut chunk = Chunk::new(chunk_position.clone());
+                let mut brickmap = Brickmap::new(brickmap_position.clone());
 
-                chunk.set_voxel(local_position, voxel);
-                let entity = world.spawn((chunk,));
+                brickmap.set_voxel(local_position, voxel);
+                let entity = world.spawn((brickmap,));
 
-                {
-                    let mut chunk_map = world.resource_mut::<ChunkMap>();
-                    chunk_map.insert(chunk_position, entity);
-                }
+                let mut brickgrid = world.resource_mut::<Brickgrid>();
+                brickgrid.insert(brickmap_position, entity);
             }
         }));
     }
@@ -53,32 +49,21 @@ impl VoxelCommands {
     pub fn despawn(&mut self, voxel_position: GridPosition) {
         let queue = unsafe { &*self.queue };
         queue.borrow_mut().push(Box::new(move |world| {
-            let render_config = *world.resource::<RenderConfig>();
-            let chunk_position = voxel_position.to_chunk_position(&render_config);
-            let local_position = voxel_position.to_local_position(&render_config);
+            let brickmap_position = voxel_position.to_brickmap_position();
+            let local_position = voxel_position.to_local_position();
 
             let entity = {
-                let chunk_map = world.resource::<ChunkMap>();
-                chunk_map.get(&chunk_position).copied()
+                let brickgrid = world.resource::<Brickgrid>();
+                brickgrid.get(&brickmap_position).copied()
             };
 
             if let Some(entity) = entity {
-                let mut chunk = world
-                    .get_mut::<Chunk>(entity)
-                    .expect("failed to get chunk entity");
-                chunk.remove_voxel(&local_position);
+                let mut brickmap = world
+                    .get_mut::<Brickmap>(entity)
+                    .expect("failed to get brickmap entity");
+                brickmap.remove_voxel(&local_position);
             }
         }));
-    }
-
-    pub fn spawn_asset(&mut self, asset: VoxelAsset, position: &GridPosition) {
-        for (asset_position, voxel) in asset.grid {
-            let x = asset_position.x + position.x;
-            let y = asset_position.y + position.y;
-            let z = asset_position.z + position.z;
-
-            self.spawn(GridPosition { x, y, z }, voxel);
-        }
     }
 }
 

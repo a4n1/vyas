@@ -1,8 +1,9 @@
 use glam::{BVec3A, IVec3, Vec3A, Vec3Swizzles};
 
 use crate::{
-    chunk::{Chunk, ChunkMap},
-    config::RenderConfig,
+    brickgrid::Brickgrid,
+    brickmap::Brickmap,
+    config::{BRICKMAP_SIZE, RenderConfigState},
     ecs::World,
     position::{GridPosition, VoxelFace},
 };
@@ -23,13 +24,9 @@ pub(crate) struct DDA;
 
 impl DDA {
     pub(crate) fn hit(ray: &Ray, world: &World) -> Option<VoxelHit> {
-        let render_config = *world.resource::<RenderConfig>();
-        let max_distance = render_config.max_render_distance as f32
-            * render_config.chunk_size as f32
-            * render_config.voxel_size;
-        let grid_origin = ray.origin / render_config.voxel_size + Vec3A::splat(0.5);
-
-        let mut dda = DDAState::from_pos_and_dir(grid_origin, ray.direction);
+        let render_config = *world.resource::<RenderConfigState>();
+        let max_distance = render_config.brickgrid_size as f32 * BRICKMAP_SIZE as f32;
+        let mut dda = DDAState::from_pos_and_dir(ray.origin, ray.direction);
 
         loop {
             let position = GridPosition {
@@ -38,7 +35,7 @@ impl DDA {
                 z: dda.next_voxel_pos.z,
             };
 
-            if Self::contains_voxel(&position, world, &render_config)
+            if Self::contains_voxel(&position, world)
                 && let Some(face) = VoxelFace::from_normal(dda.hit_normal())
             {
                 return Some(VoxelHit { position, face });
@@ -46,28 +43,24 @@ impl DDA {
 
             dda.step_mut();
 
-            if dda.hit_distance() * render_config.voxel_size > max_distance {
+            if dda.hit_distance() > max_distance {
                 return None;
             }
         }
     }
 
-    fn contains_voxel(
-        position: &GridPosition,
-        world: &World,
-        render_config: &RenderConfig,
-    ) -> bool {
-        let chunk_position = position.to_chunk_position(render_config);
-        let local_position = position.to_local_position(render_config);
+    fn contains_voxel(position: &GridPosition, world: &World) -> bool {
+        let brickmap_position = position.to_brickmap_position();
+        let local_position = position.to_local_position();
 
-        let chunk_map = world.resource::<ChunkMap>();
-        let Some(entity) = chunk_map.get(&chunk_position) else {
+        let brickgrid = world.resource::<Brickgrid>();
+        let Some(entity) = brickgrid.get(&brickmap_position) else {
             return false;
         };
 
         world
-            .get::<Chunk>(*entity)
-            .is_some_and(|chunk| chunk.contains(&local_position))
+            .get::<Brickmap>(*entity)
+            .is_some_and(|brickmap| brickmap.contains(&local_position))
     }
 }
 

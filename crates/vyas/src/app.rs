@@ -16,7 +16,7 @@ use winit::platform::web::EventLoopExtWebSys;
 use crate::{
     camera::CameraConfig,
     client::{Client, SharedClient},
-    config::RenderConfig,
+    config::RenderConfigState,
     ecs::{IntoSystem, Resource, Schedule, System, World},
 };
 
@@ -33,7 +33,7 @@ pub struct App {
 #[derive(Default)]
 pub(crate) struct AppConfig {
     pub(crate) camera_config: CameraConfig,
-    pub(crate) render_config: RenderConfig,
+    pub(crate) render_config: RenderConfigState,
     pub(crate) systems: Vec<(Schedule, Box<dyn System>)>,
     pub(crate) resources: Vec<Box<dyn FnOnce(&mut World)>>,
 }
@@ -68,7 +68,7 @@ impl App {
         self
     }
 
-    pub fn set_render_config(mut self, render_config: RenderConfig) -> Self {
+    pub fn set_render_config(mut self, render_config: RenderConfigState) -> Self {
         let config = self.config.as_mut().expect("app config already taken");
         config.render_config = render_config;
         self

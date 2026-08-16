@@ -94,8 +94,4 @@ pub(crate) enum Action {
         position: GridPosition,
         voxel: Voxel,
     },
-    LoadGrid {
-        prev_grid: Grid,
-        next_grid: Grid,
-    },
 }

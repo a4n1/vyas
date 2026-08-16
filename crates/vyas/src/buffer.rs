@@ -1,135 +1,195 @@
-use std::{collections::HashMap, ops::Range};
+use std::ops::Range;
 
-use wgpu::Queue;
+use lru::LruCache;
+use wgpu::{Limits, Queue};
 
-use crate::{chunk::Chunk, config::RenderConfig, ecs::Entity, pipeline::Pipeline};
+use crate::{
+    brickgrid::{BrickgridCellData, Feedback},
+    brickmap::{Brickmap, BrickmapGpu},
+    color::ColorPaletteState,
+    pipeline::Pipeline,
+    prelude::GridPosition,
+};
 
-pub(crate) struct ChunkBuffer {
-    data: HashMap<Entity, ChunkBufferItem>,
-    vertex_allocator: BufferAllocator,
-    index_allocator: BufferAllocator,
-    frame: u64,
+pub(crate) struct BrickmapBuffer {
+    brickmaps: BufferState<BrickmapItem>,
+    colors: BufferState<ColorItem>,
 }
 
-#[derive(Default, Clone)]
-pub(crate) struct ChunkBufferItem {
-    pub(crate) index_allocation: Allocation,
-    pub(crate) vertex_allocation: Allocation,
-    pub(crate) vertex_byte_len: u64,
-    pub(crate) index_byte_len: u64,
-    pub(crate) mesh_index_count: u32,
-    frame: u64,
-}
+impl BrickmapBuffer {
+    pub(crate) fn new() -> Self {
+        let capacity = Limits::default().max_storage_buffer_binding_size;
 
-impl ChunkBuffer {
-    pub(crate) fn new(render_config: &RenderConfig) -> Self {
         Self {
-            data: HashMap::new(),
-            vertex_allocator: BufferAllocator::new(render_config),
-            index_allocator: BufferAllocator::new(render_config),
-            frame: 0,
+            brickmaps: BufferState::new(capacity),
+            colors: BufferState::new(capacity),
         }
     }
 
     pub(crate) fn insert(
         &mut self,
-        entity: &Entity,
-        chunk: &mut Chunk,
+        brickmap: &mut Brickmap,
+        brickgrid_index: usize,
+        color_palette: &ColorPaletteState,
+        feedback: &Feedback,
         pipeline: &Pipeline,
         queue: &Queue,
-        render_config: &RenderConfig,
-    ) -> Option<ChunkBufferItem> {
-        let needs_upload = chunk.dirty || !self.data.contains_key(entity);
+    ) -> BrickgridCellData {
+        if brickmap.dirty {
+            self.brickmaps.free(&brickmap.position);
+            self.colors.free(&brickmap.position);
+            brickmap.dirty = false;
+        }
+
+        if brickmap.is_empty() {
+            return BrickgridCellData::Empty;
+        }
+
+        let needs_upload = feedback.is_requested(brickgrid_index as u32);
 
         if needs_upload {
-            self.upload_chunk(entity, chunk, pipeline, queue, render_config);
+            self.upload_brickmap(brickmap, color_palette, pipeline, queue);
         }
 
-        let buffer_chunk = self.data.get_mut(entity)?;
-
-        buffer_chunk.frame = self.frame;
-
-        Some(buffer_chunk.clone())
+        if let Some(brickmap_item) = self.brickmaps.get(&brickmap.position) {
+            brickmap_item.brickgrid_cell.clone()
+        } else {
+            BrickgridCellData::Unloaded
+        }
     }
 
-    pub(crate) fn cleanup(&mut self) {
-        self.frame += 1;
-
-        self.data.retain(|_, chunk| {
-            if self.frame.saturating_sub(chunk.frame) > 300 {
-                self.vertex_allocator.free(&chunk.vertex_allocation);
-                self.index_allocator.free(&chunk.index_allocation);
-
-                false
-            } else {
-                true
-            }
-        });
-    }
-
-    fn upload_chunk(
+    fn upload_brickmap(
         &mut self,
-        entity: &Entity,
-        chunk: &mut Chunk,
+        brickmap: &mut Brickmap,
+        color_palette: &ColorPaletteState,
         pipeline: &Pipeline,
         queue: &Queue,
-        render_config: &RenderConfig,
     ) {
-        let mesh = chunk.mesh(render_config);
+        let brickmap_gpu_data = brickmap.to_gpu(color_palette);
 
-        let vertex_bytes = bytemuck::cast_slice(&mesh.vertices);
-        let index_bytes = bytemuck::cast_slice(&mesh.indices);
-        let vertex_byte_len = vertex_bytes.len() as u64;
-        let index_byte_len = index_bytes.len() as u64;
+        let mut color_data = brickmap_gpu_data.colors;
+        let padded_len = color_data.len().div_ceil(4) * 4;
+        color_data.resize(padded_len, 0);
+        let color_item = self
+            .colors
+            .alloc(color_data.len() as u64, &brickmap.position);
 
-        if vertex_byte_len == 0 || index_byte_len == 0 {
-            self.free_buffer_chunk(entity);
-            return;
-        }
+        let mut brickmap_gpu = brickmap_gpu_data.brickmap;
+        let brickmap_item = self
+            .brickmaps
+            .alloc(size_of::<BrickmapGpu>() as u64, &brickmap.position);
 
-        let buffer_chunk = self.data.entry(*entity).or_default();
+        let color_index = color_item.allocation.offset;
+        brickmap_gpu.color_index = color_index as u32;
 
-        let needs_new_slot = buffer_chunk.vertex_allocation.capacity < vertex_byte_len
-            || buffer_chunk.index_allocation.capacity < index_byte_len;
-
-        if needs_new_slot {
-            self.vertex_allocator.free(&buffer_chunk.vertex_allocation);
-            self.index_allocator.free(&buffer_chunk.index_allocation);
-
-            buffer_chunk.vertex_allocation = self
-                .vertex_allocator
-                .alloc(vertex_byte_len)
-                .expect("vertex buffer allocator exhausted");
-
-            buffer_chunk.index_allocation = self
-                .index_allocator
-                .alloc(index_byte_len)
-                .expect("index buffer allocator exhausted");
-        }
-
-        buffer_chunk.vertex_byte_len = vertex_byte_len;
-        buffer_chunk.index_byte_len = index_byte_len;
-        buffer_chunk.mesh_index_count = mesh.indices.len() as u32;
-        buffer_chunk.frame = self.frame;
+        let brickmap_data = [brickmap_gpu];
 
         queue.write_buffer(
-            &pipeline.vertex_buffer,
-            buffer_chunk.vertex_allocation.offset,
-            vertex_bytes,
+            &pipeline.color_buffer,
+            color_item.allocation.offset,
+            &color_data,
         );
 
         queue.write_buffer(
-            &pipeline.index_buffer,
-            buffer_chunk.index_allocation.offset,
-            index_bytes,
+            &pipeline.brickmap_buffer,
+            brickmap_item.allocation.offset,
+            bytemuck::cast_slice(&brickmap_data),
         );
+
+        if !brickmap_gpu.is_empty() {
+            let index =
+                (brickmap_item.allocation.offset / size_of::<BrickmapGpu>() as u64 + 1) as u32;
+
+            brickmap_item.brickgrid_cell = BrickgridCellData::Loaded {
+                brickmap_index: index,
+            };
+        }
+
+        brickmap.dirty = false;
+    }
+}
+
+struct BufferState<V: AllocationItem> {
+    cache: LruCache<GridPosition, V>,
+    allocator: BufferAllocator,
+}
+
+impl<V: AllocationItem> BufferState<V> {
+    fn new(capacity: u64) -> Self {
+        Self {
+            cache: LruCache::unbounded(),
+            allocator: BufferAllocator::new(capacity),
+        }
     }
 
-    fn free_buffer_chunk(&mut self, entity: &Entity) {
-        if let Some(buffer_chunk) = self.data.remove(entity) {
-            self.vertex_allocator.free(&buffer_chunk.vertex_allocation);
-            self.index_allocator.free(&buffer_chunk.index_allocation);
+    fn get(&mut self, position: &GridPosition) -> Option<&V> {
+        self.cache.get(position)
+    }
+
+    fn free(&mut self, position: &GridPosition) {
+        if let Some(value) = self.cache.pop(position) {
+            self.allocator.free(value.allocation());
         }
+    }
+
+    fn alloc(&mut self, size: u64, position: &GridPosition) -> &mut V {
+        if !self.cache.contains(position) {
+            let allocation = loop {
+                if let Some(allocation) = self.allocator.alloc(size) {
+                    break allocation;
+                }
+
+                let Some((_, evicted)) = self.cache.pop_lru() else {
+                    panic!("failed to allocate memory, allocation exceeds buffer capacity");
+                };
+
+                self.allocator.free(evicted.allocation());
+            };
+
+            self.cache.put(position.clone(), V::new(allocation));
+        }
+
+        self.cache
+            .get_mut(position)
+            .expect("failed to get allocation item")
+    }
+}
+
+trait AllocationItem {
+    fn new(allocation: Allocation) -> Self;
+    fn allocation(&self) -> &Allocation;
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct BrickmapItem {
+    pub(crate) allocation: Allocation,
+    pub(crate) brickgrid_cell: BrickgridCellData,
+}
+
+impl AllocationItem for BrickmapItem {
+    fn new(allocation: Allocation) -> Self {
+        Self {
+            allocation,
+            brickgrid_cell: BrickgridCellData::default(),
+        }
+    }
+
+    fn allocation(&self) -> &Allocation {
+        &self.allocation
+    }
+}
+
+pub(crate) struct ColorItem {
+    pub(crate) allocation: Allocation,
+}
+
+impl AllocationItem for ColorItem {
+    fn new(allocation: Allocation) -> Self {
+        Self { allocation }
+    }
+
+    fn allocation(&self) -> &Allocation {
+        &self.allocation
     }
 }
 
@@ -144,10 +204,10 @@ pub(crate) struct Allocation {
 }
 
 impl BufferAllocator {
-    fn new(render_config: &RenderConfig) -> Self {
+    fn new(size: u64) -> Self {
         #[allow(clippy::single_range_in_vec_init)]
         Self {
-            free_ranges: vec![0..render_config.max_buffer_size],
+            free_ranges: vec![0..size],
         }
     }
 

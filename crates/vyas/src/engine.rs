@@ -8,8 +8,9 @@ use winit::{
 
 use crate::{
     app::AppConfig,
+    brickgrid::Brickgrid,
     camera::CameraState,
-    chunk::ChunkMap,
+    color::ColorPaletteState,
     ecs::{CommandQueue, Res, ResMut, Resource, Schedule, System, World},
     fps::FpsCounter,
     graphics::Graphics,
@@ -39,13 +40,14 @@ impl Engine {
         world.insert_resource(InputState::new());
         world.insert_resource(CameraState::new(camera_config));
         world.insert_resource(render_config);
-        world.insert_resource(ChunkMap::new());
+        world.insert_resource(Brickgrid::new());
+        world.insert_resource(ColorPaletteState::new());
 
         for insert_resource in resources {
             insert_resource(&mut world);
         }
 
-        let graphics = Graphics::new(window, &render_config).await;
+        let graphics = Graphics::new(window).await;
         let pipeline = Pipeline::new(&graphics, &world);
         let fps_counter = FpsCounter::new();
 
@@ -82,7 +84,7 @@ impl Engine {
             command(&mut self.world);
         }
 
-        self.pipeline.update(&self.world);
+        self.pipeline.update(&self.graphics, &self.world);
         self.graphics.update(&self.pipeline, &self.world);
 
         let mut input_state = self.world.resource_mut::<InputState>();

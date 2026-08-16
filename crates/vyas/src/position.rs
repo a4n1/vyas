@@ -1,4 +1,4 @@
-use crate::config::RenderConfig;
+use crate::config::BRICKMAP_SIZE;
 use glam::{Vec3, Vec3A};
 use serde::{Deserialize, Serialize};
 
@@ -10,8 +10,8 @@ pub struct GridPosition {
 }
 
 impl GridPosition {
-    pub(crate) fn to_chunk_position(&self, render_config: &RenderConfig) -> Self {
-        let size = render_config.chunk_size as i32;
+    pub(crate) fn to_brickmap_position(&self) -> Self {
+        let size = BRICKMAP_SIZE as i32;
 
         Self {
             x: self.x.div_euclid(size),
@@ -20,8 +20,8 @@ impl GridPosition {
         }
     }
 
-    pub(crate) fn to_local_position(&self, render_config: &RenderConfig) -> Self {
-        let size = render_config.chunk_size as i32;
+    pub(crate) fn to_local_position(&self) -> Self {
+        let size = BRICKMAP_SIZE as i32;
 
         Self {
             x: self.x.rem_euclid(size),
@@ -30,14 +30,8 @@ impl GridPosition {
         }
     }
 
-    pub(crate) fn to_world_position(&self, render_config: &RenderConfig) -> WorldPosition {
-        let scale = render_config.chunk_size as f32 * render_config.voxel_size;
-
-        WorldPosition {
-            x: self.x as f32 * scale,
-            y: self.y as f32 * scale,
-            z: self.z as f32 * scale,
-        }
+    pub(crate) fn to_index(&self, size: i32) -> usize {
+        (self.x + self.y * size + self.z * size.pow(2)) as usize
     }
 
     pub fn adjacent(&self, face: VoxelFace) -> Self {
@@ -88,13 +82,13 @@ pub struct WorldPosition {
 }
 
 impl WorldPosition {
-    pub(crate) fn to_chunk_position(&self, render_config: &RenderConfig) -> GridPosition {
-        let size = render_config.chunk_size as f32;
+    pub(crate) fn to_brickmap_position(&self) -> GridPosition {
+        let size = BRICKMAP_SIZE as f32;
 
         GridPosition {
-            x: (self.x / render_config.voxel_size).div_euclid(size) as i32,
-            y: (self.y / render_config.voxel_size).div_euclid(size) as i32,
-            z: (self.z / render_config.voxel_size).div_euclid(size) as i32,
+            x: self.x.div_euclid(size) as i32,
+            y: self.y.div_euclid(size) as i32,
+            z: self.z.div_euclid(size) as i32,
         }
     }
 }

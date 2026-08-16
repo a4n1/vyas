@@ -81,18 +81,25 @@ impl CameraState {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub(crate) struct CameraUniform {
-    view_proj: [[f32; 4]; 4],
+pub(crate) struct CameraGpu {
+    inverse_view_proj: [[f32; 4]; 4],
+    position: [f32; 4],
 }
 
-impl CameraUniform {
+impl CameraGpu {
     pub(crate) fn new() -> Self {
         Self {
-            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+            inverse_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+            position: [0.0; 4],
         }
     }
 
     pub(crate) fn update_view_proj(&mut self, camera: &CameraState) {
-        self.view_proj = camera.build_view_projection_matrix().to_cols_array_2d();
+        self.inverse_view_proj = camera
+            .build_view_projection_matrix()
+            .inverse()
+            .to_cols_array_2d();
+
+        self.position = [camera.position.x, camera.position.y, camera.position.z, 1.0];
     }
 }

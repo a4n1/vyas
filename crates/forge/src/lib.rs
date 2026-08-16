@@ -3,11 +3,20 @@ mod grid;
 mod history;
 mod storage;
 
-use vyas::prelude::*;
+use vyas::{palette_color, prelude::*};
 use wasm_bindgen::prelude::*;
 
 use crate::grid::{GRID_SIZE, Grid};
 use crate::history::{Action, History};
+
+palette_color!(
+    GRID_BASE,
+    Srgb {
+        r: 128,
+        g: 128,
+        b: 128
+    }
+);
 
 struct InsertPlane(Option<i32>);
 
@@ -21,7 +30,6 @@ pub enum CursorMode {
 
 struct VoxelFile {
     file: Option<Vec<u8>>,
-    initial_load: Option<bool>,
 }
 
 struct EditTransaction(Vec<Action>);
@@ -66,10 +74,7 @@ impl Forge {
                     .insert_resource(Color::Srgb(Srgb { r: 0, g: 0, b: 0 }))
                     .insert_resource(CursorState(CursorMode::Insert))
                     .insert_resource(InsertPlane(Some(0)))
-                    .insert_resource(VoxelFile {
-                        file: None,
-                        initial_load: None,
-                    })
+                    .insert_resource(VoxelFile { file: None })
                     .insert_resource(History::new())
                     .insert_resource(EditTransaction(Vec::new()))
                     .insert_resource(grid)
@@ -100,11 +105,9 @@ impl Forge {
             .set_resource::<CursorState>(CursorState(cursor_mode));
     }
 
-    pub fn load_grid(&self, bytes: Vec<u8>, initial_load: Option<bool>) {
-        self.client.set_resource::<VoxelFile>(VoxelFile {
-            file: Some(bytes),
-            initial_load: initial_load,
-        });
+    pub fn load_grid(&self, bytes: Vec<u8>) {
+        self.client
+            .set_resource::<VoxelFile>(VoxelFile { file: Some(bytes) });
     }
 
     pub fn export_grid(&self) -> Option<JsValue> {
@@ -122,25 +125,29 @@ impl Forge {
     }
 }
 
-fn draw_scene(mut voxel: VoxelCommands) {
+fn draw_scene(mut voxel: VoxelCommands, mut color_palette: ColorPalette) {
+    color_palette
+        .insert(GRID_BASE)
+        .expect("failed to insert grid base into color palette");
+
     for i in (-GRID_SIZE / 2)..(GRID_SIZE / 2) {
         for j in (-GRID_SIZE / 2)..(GRID_SIZE / 2) {
             voxel.spawn(
                 GridPosition { x: i, y: -1, z: j },
                 Voxel {
-                    color: Color::Srgb(Srgb {
-                        r: 128,
-                        g: 128,
-                        b: 128,
-                    }),
+                    palette_color: GRID_BASE,
                 },
             );
         }
     }
 }
 
-fn load_initial_grid(grid: Res<Grid>, mut voxels: VoxelCommands) {
+fn load_initial_grid(grid: Res<Grid>, mut voxels: VoxelCommands, mut palette: ColorPalette) {
     for (position, voxel) in grid.into_iter() {
+        palette
+            .insert(voxel.palette_color.clone())
+            .expect("failed to load initial grid, palette is full");
+
         voxels.spawn(position, voxel);
     }
 }
@@ -292,6 +299,7 @@ fn update_camera_position(mut camera: Camera, input: Input) {
 fn edit_voxel(
     input: Input,
     mut voxels: VoxelCommands,
+    mut color_palette: ColorPalette,
     color: Res<Color>,
     cursor_state: Res<CursorState>,
     mut edit_transaction: ResMut<EditTransaction>,
@@ -319,6 +327,7 @@ fn edit_voxel(
             &mut insert_plane,
             &grid,
             &mut voxels,
+            &mut color_palette,
             &mut edit_transaction,
         ),
         CursorMode::Remove => delete_voxel(hit, &grid, &mut voxels, &mut edit_transaction),
@@ -331,6 +340,7 @@ fn insert_voxel(
     insert_plane: &mut InsertPlane,
     grid: &Grid,
     voxels: &mut VoxelCommands,
+    palette: &mut ColorPalette,
     edit_transaction: &mut EditTransaction,
 ) {
     let position = hit.position.adjacent(hit.face);
@@ -353,9 +363,13 @@ fn insert_voxel(
         return;
     }
 
-    let voxel = Voxel {
-        color: color.clone(),
+    let palette_color = PaletteColor::from(color.clone());
+
+    if palette.insert(palette_color.clone()).is_err() {
+        log::warn!("failed to create voxel, no free color palette space");
     };
+
+    let voxel = Voxel { palette_color };
 
     if let Some(v) = grid.borrow().get(&position)
         && v == &voxel
@@ -423,7 +437,7 @@ fn load_file(
     mut voxel_file: ResMut<VoxelFile>,
     mut grid: ResMut<Grid>,
     mut voxels: VoxelCommands,
-    mut history: ResMut<History>,
+    mut color_palette: ColorPalette,
 ) {
     let Some(ref file) = voxel_file.file.clone() else {
         return;
@@ -444,39 +458,49 @@ fn load_file(
         return;
     }
 
-    if !voxel_file.initial_load.is_some_and(|v| v) {
-        history.insert_actions(vec![Action::LoadGrid {
-            prev_grid: grid.normalize(),
-            next_grid: asset.grid.clone(),
-        }]);
-    }
-
-    load_grid(asset, &mut grid, &mut voxels);
+    load_grid(asset, &mut grid, &mut voxels, &mut color_palette);
 }
 
-fn load_grid(asset: VoxelAsset, grid: &mut Grid, voxels: &mut VoxelCommands) {
+fn load_grid(
+    asset: VoxelAsset,
+    grid: &mut Grid,
+    voxels: &mut VoxelCommands,
+    color_palette: &mut ColorPaletteState,
+) {
     for (position, _) in grid.into_iter() {
         voxels.despawn(position);
     }
 
-    voxels.spawn_asset(
-        asset.clone(),
-        &GridPosition {
-            x: -GRID_SIZE / 2,
-            y: 0,
-            z: -GRID_SIZE / 2,
-        },
-    );
+    color_palette.clear();
+
+    color_palette
+        .insert(GRID_BASE)
+        .expect("failed to insert grid base into color palette");
+
+    for voxel in asset.grid.values() {
+        color_palette
+            .insert(voxel.palette_color.clone())
+            .expect("failed to load grid, palette is full");
+    }
+
+    let position = &GridPosition {
+        x: -GRID_SIZE / 2,
+        y: 0,
+        z: -GRID_SIZE / 2,
+    };
+
+    for (asset_position, voxel) in &asset.grid {
+        let x = asset_position.x + position.x;
+        let y = asset_position.y + position.y;
+        let z = asset_position.z + position.z;
+
+        voxels.spawn(GridPosition { x, y, z }, voxel.clone());
+    }
 
     grid.set(grid::denormalize_grid(&asset.grid));
 }
 
-fn undo(
-    mut history: ResMut<History>,
-    input: Input,
-    mut grid: ResMut<Grid>,
-    mut voxels: VoxelCommands,
-) {
+fn undo(mut history: ResMut<History>, input: Input, grid: Res<Grid>, mut voxels: VoxelCommands) {
     if primary_modifier_pressed(&input)
         && !input.pressed(InputButton::Modifier(Modifier::Shift))
         && input.just_pressed(InputButton::Key(KeyCode::KeyZ))
@@ -493,20 +517,12 @@ fn undo(
                 Action::DeleteVoxel { position, voxel } => {
                     spawn_voxel(&position, &voxel, &grid, &mut voxels);
                 }
-                Action::LoadGrid { prev_grid, .. } => {
-                    load_grid(VoxelAsset { grid: prev_grid }, &mut grid, &mut voxels);
-                }
             };
         }
     }
 }
 
-fn redo(
-    mut history: ResMut<History>,
-    input: Input,
-    mut grid: ResMut<Grid>,
-    mut voxels: VoxelCommands,
-) {
+fn redo(mut history: ResMut<History>, input: Input, grid: Res<Grid>, mut voxels: VoxelCommands) {
     if primary_modifier_pressed(&input)
         && input.pressed(InputButton::Modifier(Modifier::Shift))
         && input.just_pressed(InputButton::Key(KeyCode::KeyZ))
@@ -522,9 +538,6 @@ fn redo(
                 }
                 Action::DeleteVoxel { position, .. } => {
                     despawn_voxel(&position, &grid, &mut voxels);
-                }
-                Action::LoadGrid { next_grid, .. } => {
-                    load_grid(VoxelAsset { grid: next_grid }, &mut grid, &mut voxels);
                 }
             };
         }
