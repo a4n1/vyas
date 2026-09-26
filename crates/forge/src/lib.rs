@@ -49,6 +49,10 @@ impl Forge {
         let client = SharedClient::new();
         let grid = Grid::new();
 
+        let render_config = RenderConfigBuilder::new()
+            .resolution(Resolution::Scale(0.314))
+            .build();
+
         {
             let client = client.clone();
             let grid = grid.clone();
@@ -71,6 +75,7 @@ impl Forge {
                         },
                         fov: 45.0,
                     })
+                    .set_render_config(render_config)
                     .insert_resource(Color::Srgb(Srgb { r: 0, g: 0, b: 0 }))
                     .insert_resource(CursorState(CursorMode::Insert))
                     .insert_resource(InsertPlane(Some(0)))

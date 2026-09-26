@@ -4,7 +4,7 @@ use crate::{
     brickgrid::FeedbackGpu,
     camera::{CameraGpu, CameraState},
     color::ColorPaletteState,
-    config::RenderConfigState,
+    config::{RenderConfigState, Resolution},
     ecs::World,
     graphics::Graphics,
 };
@@ -19,6 +19,7 @@ pub struct Pipeline {
     pub(crate) scene_bind_group: wgpu::BindGroup,
     render_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) render_bind_group: wgpu::BindGroup,
+    output_sampler: wgpu::Sampler,
     output_texture: wgpu::Texture,
     pub(crate) compute_pipeline: wgpu::ComputePipeline,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
@@ -109,9 +110,15 @@ impl Pipeline {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
-        let output_texture = Self::create_output_texture(graphics);
+        let output_texture = Self::create_output_texture(graphics, render_config.resolution);
 
         let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let output_sampler = graphics.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("output-sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
 
         let scene_bind_group_layout =
             graphics
@@ -268,16 +275,24 @@ impl Pipeline {
             graphics
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 8,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 8,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
                         },
-                        count: None,
-                    }],
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 9,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
                     label: Some("render-bind-group-layout"),
                 });
 
@@ -285,10 +300,16 @@ impl Pipeline {
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &render_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::TextureView(&output_view),
-                }],
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::TextureView(&output_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: wgpu::BindingResource::Sampler(&output_sampler),
+                    },
+                ],
                 label: Some("render-bind-group"),
             });
 
@@ -351,6 +372,7 @@ impl Pipeline {
             scene_bind_group,
             render_bind_group_layout,
             render_bind_group,
+            output_sampler,
             output_texture,
             compute_pipeline,
             render_pipeline,
@@ -362,32 +384,42 @@ impl Pipeline {
         }
     }
 
+    pub(crate) fn output_size(&self) -> wgpu::Extent3d {
+        self.output_texture.size()
+    }
+
     pub(crate) fn update(&mut self, graphics: &Graphics, world: &World) {
         let camera = world.resource::<CameraState>();
         self.camera.update_view_proj(&camera);
 
         let render_config = world.resource::<RenderConfigState>();
 
+        let mut is_change = false;
+
+        if self.render_config.resolution != render_config.resolution {
+            is_change = true;
+        }
+
         if self.render_config.brickgrid_size != render_config.brickgrid_size {
+            is_change = true;
+
             self.brickgrid_buffer = graphics.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("brickgrid-buffer"),
                 size: render_config.brickgrid_size.pow(3) as u64 * 4,
                 mapped_at_creation: false,
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             });
-
-            let output_view = self
-                .output_texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
-
-            self.rebuild_scene_bind_group(graphics, &output_view);
         }
 
         self.render_config = *render_config;
+
+        if is_change {
+            self.resize(graphics);
+        }
     }
 
     pub(crate) fn resize(&mut self, graphics: &Graphics) {
-        let output_texture = Self::create_output_texture(graphics);
+        let output_texture = Self::create_output_texture(graphics, self.render_config.resolution);
         let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         self.rebuild_scene_bind_group(graphics, &output_view);
@@ -396,10 +428,16 @@ impl Pipeline {
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &self.render_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::TextureView(&output_view),
-                }],
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::TextureView(&output_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: wgpu::BindingResource::Sampler(&self.output_sampler),
+                    },
+                ],
                 label: Some("render-bind-group"),
             });
 
@@ -449,20 +487,23 @@ impl Pipeline {
             });
     }
 
-    fn create_output_texture(graphics: &Graphics) -> wgpu::Texture {
+    fn create_output_texture(graphics: &Graphics, resolution: Option<Resolution>) -> wgpu::Texture {
+        let (width, height) = match resolution.unwrap_or_default() {
+            Resolution::Scale(scale) => {
+                let width = ((graphics.surface_config.width as f64 * scale).floor() as u32).max(1);
+                let height =
+                    ((graphics.surface_config.height as f64 * scale).floor() as u32).max(1);
+
+                (width, height)
+            }
+            Resolution::Dimensions { width, height } => (width, height),
+        };
+
         graphics.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("output-texture"),
             size: wgpu::Extent3d {
-                width: graphics
-                    .surface_config
-                    .width
-                    .min(graphics.max_texture_dimension_2d)
-                    .max(1),
-                height: graphics
-                    .surface_config
-                    .height
-                    .min(graphics.max_texture_dimension_2d)
-                    .max(1),
+                width,
+                height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,

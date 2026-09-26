@@ -46,6 +46,9 @@ var output_texture: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(8)
 var output_sampled: texture_2d<f32>;
 
+@group(0) @binding(9)
+var output_sampler: sampler;
+
 @compute @workgroup_size(8, 8) 
 fn raytrace(@builtin(global_invocation_id) id: vec3u) {
     const directionEpsilon = vec3f(0.000001);
@@ -242,18 +245,28 @@ fn getIndex(position: vec3i, size: i32) -> u32 {
     return u32(position.x + position.y * size + position.z * size * size);
 }
 
+struct Vertex {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+
 @vertex
-fn vs_main(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4<f32> {
+fn vs_main(@builtin(vertex_index) idx: u32) -> Vertex {
     let positions = array(
         vec2(-1.0, -1.0),
         vec2(3.0, -1.0),
         vec2(-1.0, 3.0),
     );
 
-    return vec4(positions[idx], 0.0, 1.0);
+    let position = positions[idx];
+
+    var output: Vertex;
+    output.position = vec4(position, 0.0, 1.0);
+    output.uv = vec2(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5);
+    return output;
 }
 
 @fragment
-fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    return textureLoad(output_sampled, vec2<i32>(position.xy), 0);
+fn fs_main(input: Vertex) -> @location(0) vec4<f32> {
+    return textureSample(output_sampled, output_sampler, input.uv);
 }

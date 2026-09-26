@@ -295,9 +295,10 @@ impl Graphics {
 
         compute_pass.set_pipeline(&pipeline.compute_pipeline);
         compute_pass.set_bind_group(0, &pipeline.scene_bind_group, &[]);
+        let output_size = pipeline.output_size();
         compute_pass.dispatch_workgroups(
-            self.surface_config.width.div_ceil(8),
-            self.surface_config.height.div_ceil(8),
+            output_size.width.div_ceil(8),
+            output_size.height.div_ceil(8),
             1,
         );
 
