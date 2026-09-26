@@ -51,6 +51,7 @@ pub struct InputState {
     pressed: HashMap<InputButton, bool>,
     just_pressed: HashSet<InputButton>,
     mouse_position: MousePosition,
+    mouse_delta: (f64, f64),
     voxel_hit: Option<VoxelHit>,
     scroll_delta: Option<ScrollDelta>,
 }
@@ -63,6 +64,7 @@ impl InputState {
     pub fn update(&mut self) {
         self.just_pressed.clear();
         self.scroll_delta = None;
+        self.mouse_delta = (0.0, 0.0);
     }
 
     pub(crate) fn insert_pressed(&mut self, input_button: InputButton, pressed: bool) {
@@ -123,6 +125,15 @@ impl InputState {
 
     pub fn mouse_position(&self) -> MousePosition {
         self.mouse_position
+    }
+
+    pub fn mouse_delta(&self) -> (f64, f64) {
+        self.mouse_delta
+    }
+
+    pub(crate) fn increment_mouse_delta(&mut self, delta: (f64, f64)) {
+        self.mouse_delta.0 += delta.0;
+        self.mouse_delta.1 += delta.1;
     }
 
     pub(crate) fn set_scroll_delta(&mut self, delta: ScrollDelta) {

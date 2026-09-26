@@ -655,6 +655,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "examples"
+version = "0.1.0"
+dependencies = [
+ "vyas",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2287,6 +2294,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "vox-rs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1808b378125b28688611c70c6230bc40d1489bf1205d6486c338184bdb6cdb6a"
+
+[[package]]
 name = "vyas"
 version = "0.1.0"
 dependencies = [
@@ -2301,6 +2314,7 @@ dependencies = [
  "pollster",
  "rand",
  "serde",
+ "vox-rs",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

@@ -101,6 +101,10 @@ impl Client {
         self.engine.handle_mouse_move(position);
     }
 
+    pub(crate) fn handle_mouse_motion(&mut self, delta: (f64, f64)) {
+        self.engine.handle_mouse_motion(delta);
+    }
+
     pub(crate) fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
         self.engine.handle_mouse_scroll(delta);
     }

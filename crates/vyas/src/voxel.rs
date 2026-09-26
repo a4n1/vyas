@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    asset::Grid,
     brickgrid::Brickgrid,
     brickmap::Brickmap,
     color::PaletteColor,
@@ -18,6 +19,31 @@ pub struct VoxelCommands {
 }
 
 impl VoxelCommands {
+    pub fn spawn_grid(&mut self, grid: Grid) {
+        let queue = unsafe { &*self.queue };
+        queue.borrow_mut().push(Box::new(move |world| {
+            let mut brickmaps = std::collections::HashMap::new();
+
+            for block in grid {
+                let brickmap_position = block.position.to_brickmap_position();
+                let local_position = block.position.to_local_position();
+
+                let brickmap = brickmaps
+                    .entry(brickmap_position.clone())
+                    .or_insert_with(|| Brickmap::new(brickmap_position));
+
+                brickmap.set_voxel(local_position, block.voxel);
+            }
+
+            for (position, brickmap) in brickmaps {
+                let brickmap_entity = world.spawn((brickmap,));
+                world
+                    .resource_mut::<Brickgrid>()
+                    .insert(position, brickmap_entity);
+            }
+        }));
+    }
+
     pub fn spawn(&mut self, voxel_position: GridPosition, voxel: Voxel) {
         let queue = unsafe { &*self.queue };
         queue.borrow_mut().push(Box::new(move |world| {

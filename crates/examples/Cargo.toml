@@ -1,0 +1,13 @@
+[package]
+name = "examples"
+version = "0.1.0"
+edition = "2024"
+publish = false
+autobins = false
+
+[[bin]]
+name = "vyas"
+path = "src/main.rs"
+
+[dependencies]
+vyas = { path = "../vyas" }

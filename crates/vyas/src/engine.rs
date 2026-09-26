@@ -119,6 +119,11 @@ impl Engine {
         input_state.set_mouse_position(position, &self.world, self.graphics.viewport_size);
     }
 
+    pub(crate) fn handle_mouse_motion(&mut self, delta: (f64, f64)) {
+        let mut input_state = self.world.resource_mut::<InputState>();
+        input_state.increment_mouse_delta(delta);
+    }
+
     pub(crate) fn handle_mouse_scroll(&mut self, delta: MouseScrollDelta) {
         let mut input_state = self.world.resource_mut::<InputState>();
         input_state.set_scroll_delta(delta);

@@ -19,6 +19,7 @@ lru.workspace = true
 pollster.workspace = true
 rand.workspace = true
 serde.workspace = true
+vox-rs.workspace = true
 web-time.workspace = true
 wgpu.workspace = true
 winit.workspace = true

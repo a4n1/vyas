@@ -5,7 +5,7 @@ use winit::{
     event::*,
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::PhysicalKey,
-    window::Window,
+    window::{CursorGrabMode, Window},
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -28,6 +28,8 @@ pub struct App {
     proxy: Option<winit::event_loop::EventLoopProxy<Client>>,
     client: SharedClient,
     config: Option<AppConfig>,
+    capture_cursor: bool,
+    cursor_captured: bool,
 }
 
 #[derive(Default)]
@@ -45,6 +47,8 @@ impl Default for App {
             proxy: None,
             client: SharedClient::new(),
             config: Some(AppConfig::default()),
+            capture_cursor: false,
+            cursor_captured: false,
         }
     }
 }
@@ -65,6 +69,11 @@ impl App {
     pub fn set_camera(mut self, camera_config: CameraConfig) -> Self {
         let config = self.config.as_mut().expect("app config already taken");
         config.camera_config = camera_config;
+        self
+    }
+
+    pub fn set_cursor_capture(mut self, capture_cursor: bool) -> Self {
+        self.capture_cursor = capture_cursor;
         self
     }
 
@@ -92,6 +101,26 @@ impl App {
             .systems
             .push((schedule, Box::new(system.into_system())));
         self
+    }
+
+    fn set_cursor_captured(&mut self, captured: bool) {
+        self.client.with_mut(|client| {
+            let window = client.window();
+
+            if captured {
+                let captured = window
+                    .set_cursor_grab(CursorGrabMode::Locked)
+                    .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined))
+                    .is_ok();
+
+                window.set_cursor_visible(!captured);
+                self.cursor_captured = captured;
+            } else {
+                let _ = window.set_cursor_grab(CursorGrabMode::None);
+                window.set_cursor_visible(true);
+                self.cursor_captured = false;
+            };
+        });
     }
 
     pub fn run(mut self) {
@@ -176,6 +205,27 @@ impl ApplicationHandler<Client> for App {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        if self.capture_cursor {
+            match &event {
+                WindowEvent::KeyboardInput {
+                    event:
+                        KeyEvent {
+                            physical_key: PhysicalKey::Code(winit::keyboard::KeyCode::Escape),
+                            state,
+                            ..
+                        },
+                    ..
+                } if state.is_pressed() => self.set_cursor_captured(false),
+                WindowEvent::MouseInput { state, .. }
+                    if state.is_pressed() && !self.cursor_captured =>
+                {
+                    self.set_cursor_captured(true)
+                }
+                WindowEvent::Focused(false) => self.set_cursor_captured(false),
+                _ => {}
+            }
+        }
+
         self.client.apply_commands();
 
         self.client.with_mut(|client| match event {
@@ -210,5 +260,19 @@ impl ApplicationHandler<Client> for App {
             }
             _ => {}
         });
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        if self.cursor_captured
+            && let DeviceEvent::MouseMotion { delta } = event
+        {
+            self.client
+                .with_mut(|client| client.handle_mouse_motion(delta));
+        }
     }
 }
