@@ -1,5 +1,4 @@
 pub mod app;
-pub mod asset;
 pub mod brickgrid;
 pub mod brickmap;
 pub mod buffer;
@@ -19,7 +18,6 @@ pub mod voxel;
 
 pub mod prelude {
     pub use crate::app::*;
-    pub use crate::asset::*;
     pub use crate::camera::*;
     pub use crate::client::*;
     pub use crate::color::*;
