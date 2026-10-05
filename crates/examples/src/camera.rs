@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use glam::Vec3;
 use vyas::prelude::*;
 
 pub(crate) struct NoClipCamera {
@@ -53,19 +54,19 @@ impl NoClipCamera {
         let mut movement = Vec3::default();
 
         if input.pressed(InputButton::Key(KeyCode::KeyW)) {
-            movement.add(forward);
+            movement += forward;
         }
 
         if input.pressed(InputButton::Key(KeyCode::KeyS)) {
-            movement.subtract(forward);
+            movement -= forward;
         }
 
         if input.pressed(InputButton::Key(KeyCode::KeyA)) {
-            movement.subtract(right);
+            movement -= right;
         }
 
         if input.pressed(InputButton::Key(KeyCode::KeyD)) {
-            movement.add(right);
+            movement += right;
         }
 
         if input.pressed(InputButton::Key(KeyCode::Space)) {
@@ -92,30 +93,5 @@ impl NoClipCamera {
 
     pub(crate) fn update(mut camera: Camera, input: Input, mut controller: ResMut<NoClipCamera>) {
         controller.update_camera(&mut camera, &input);
-    }
-}
-
-#[derive(Clone, Copy, Default)]
-struct Vec3 {
-    x: f32,
-    y: f32,
-    z: f32,
-}
-
-impl Vec3 {
-    fn add(&mut self, other: Self) {
-        self.x += other.x;
-        self.y += other.y;
-        self.z += other.z;
-    }
-
-    fn subtract(&mut self, other: Self) {
-        self.x -= other.x;
-        self.y -= other.y;
-        self.z -= other.z;
-    }
-
-    fn length(&self) -> f32 {
-        (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
 }

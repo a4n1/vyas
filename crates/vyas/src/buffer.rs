@@ -4,7 +4,7 @@ use lru::LruCache;
 use wgpu::{Limits, Queue};
 
 use crate::{
-    brickgrid::{BrickgridCellData, Feedback},
+    brickgrid::{BrickgridCell, BrickgridCellData},
     brickmap::{Brickmap, BrickmapGpu},
     color::ColorPaletteState,
     pipeline::Pipeline,
@@ -12,8 +12,8 @@ use crate::{
 };
 
 pub(crate) struct BrickmapBuffer {
-    brickmaps: BufferState<BrickmapItem>,
-    colors: BufferState<ColorItem>,
+    brickmaps: BufferState,
+    colors: BufferState,
 }
 
 impl BrickmapBuffer {
@@ -28,93 +28,59 @@ impl BrickmapBuffer {
 
     pub(crate) fn insert(
         &mut self,
-        brickmap: &mut Brickmap,
-        brickgrid_index: usize,
-        color_palette: &ColorPaletteState,
-        feedback: &Feedback,
-        pipeline: &Pipeline,
-        queue: &Queue,
-    ) -> BrickgridCellData {
-        if brickmap.dirty {
-            self.brickmaps.free(&brickmap.position);
-            self.colors.free(&brickmap.position);
-            brickmap.dirty = false;
-        }
-
-        if brickmap.is_empty() {
-            return BrickgridCellData::Empty;
-        }
-
-        let needs_upload = feedback.is_requested(brickgrid_index as u32);
-
-        if needs_upload {
-            self.upload_brickmap(brickmap, color_palette, pipeline, queue);
-        }
-
-        if let Some(brickmap_item) = self.brickmaps.get(&brickmap.position) {
-            brickmap_item.brickgrid_cell.clone()
-        } else {
-            BrickgridCellData::Unloaded
-        }
-    }
-
-    fn upload_brickmap(
-        &mut self,
-        brickmap: &mut Brickmap,
+        brickmap: &Brickmap,
         color_palette: &ColorPaletteState,
         pipeline: &Pipeline,
         queue: &Queue,
-    ) {
+    ) -> Option<BrickgridCell> {
         let brickmap_gpu_data = brickmap.to_gpu(color_palette);
 
         let mut color_data = brickmap_gpu_data.colors;
         let padded_len = color_data.len().div_ceil(4) * 4;
         color_data.resize(padded_len, 0);
-        let color_item = self
+        let color_allocation = self
             .colors
             .alloc(color_data.len() as u64, &brickmap.position);
 
         let mut brickmap_gpu = brickmap_gpu_data.brickmap;
-        let brickmap_item = self
+        let brickmap_allocation = self
             .brickmaps
             .alloc(size_of::<BrickmapGpu>() as u64, &brickmap.position);
 
-        let color_index = color_item.allocation.offset;
+        let color_index = color_allocation.offset;
         brickmap_gpu.color_index = color_index as u32;
 
         let brickmap_data = [brickmap_gpu];
 
-        queue.write_buffer(
-            &pipeline.color_buffer,
-            color_item.allocation.offset,
-            &color_data,
-        );
+        queue.write_buffer(&pipeline.color_buffer, color_allocation.offset, &color_data);
 
         queue.write_buffer(
             &pipeline.brickmap_buffer,
-            brickmap_item.allocation.offset,
+            brickmap_allocation.offset,
             bytemuck::cast_slice(&brickmap_data),
         );
 
-        if !brickmap_gpu.is_empty() {
-            let index =
-                (brickmap_item.allocation.offset / size_of::<BrickmapGpu>() as u64 + 1) as u32;
+        if brickmap_gpu.is_empty() {
+            None
+        } else {
+            let index = (brickmap_allocation.offset / size_of::<BrickmapGpu>() as u64 + 1) as u32;
 
-            brickmap_item.brickgrid_cell = BrickgridCellData::Loaded {
-                brickmap_index: index,
-            };
+            Some(
+                BrickgridCellData::Loaded {
+                    brickmap_index: index,
+                }
+                .into(),
+            )
         }
-
-        brickmap.dirty = false;
     }
 }
 
-struct BufferState<V: AllocationItem> {
-    cache: LruCache<GridPosition, V>,
+struct BufferState {
+    cache: LruCache<GridPosition, Allocation>,
     allocator: BufferAllocator,
 }
 
-impl<V: AllocationItem> BufferState<V> {
+impl BufferState {
     fn new(capacity: u64) -> Self {
         Self {
             cache: LruCache::unbounded(),
@@ -122,17 +88,7 @@ impl<V: AllocationItem> BufferState<V> {
         }
     }
 
-    fn get(&mut self, position: &GridPosition) -> Option<&V> {
-        self.cache.get(position)
-    }
-
-    fn free(&mut self, position: &GridPosition) {
-        if let Some(value) = self.cache.pop(position) {
-            self.allocator.free(value.allocation());
-        }
-    }
-
-    fn alloc(&mut self, size: u64, position: &GridPosition) -> &mut V {
+    fn alloc(&mut self, size: u64, position: &GridPosition) -> &mut Allocation {
         if !self.cache.contains(position) {
             let allocation = loop {
                 if let Some(allocation) = self.allocator.alloc(size) {
@@ -143,53 +99,15 @@ impl<V: AllocationItem> BufferState<V> {
                     panic!("failed to allocate memory, allocation exceeds buffer capacity");
                 };
 
-                self.allocator.free(evicted.allocation());
+                self.allocator.free(&evicted);
             };
 
-            self.cache.put(position.clone(), V::new(allocation));
+            self.cache.put(position.clone(), allocation);
         }
 
         self.cache
             .get_mut(position)
             .expect("failed to get allocation item")
-    }
-}
-
-trait AllocationItem {
-    fn new(allocation: Allocation) -> Self;
-    fn allocation(&self) -> &Allocation;
-}
-
-#[derive(Default, Clone)]
-pub(crate) struct BrickmapItem {
-    pub(crate) allocation: Allocation,
-    pub(crate) brickgrid_cell: BrickgridCellData,
-}
-
-impl AllocationItem for BrickmapItem {
-    fn new(allocation: Allocation) -> Self {
-        Self {
-            allocation,
-            brickgrid_cell: BrickgridCellData::default(),
-        }
-    }
-
-    fn allocation(&self) -> &Allocation {
-        &self.allocation
-    }
-}
-
-pub(crate) struct ColorItem {
-    pub(crate) allocation: Allocation,
-}
-
-impl AllocationItem for ColorItem {
-    fn new(allocation: Allocation) -> Self {
-        Self { allocation }
-    }
-
-    fn allocation(&self) -> &Allocation {
-        &self.allocation
     }
 }
 

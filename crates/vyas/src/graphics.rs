@@ -6,14 +6,14 @@ use std::{
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    brickgrid::{
-        Brickgrid, BrickgridCell, BrickgridCellData, Feedback, FeedbackGpu, VisibleBrickmap,
-    },
+    brickgrid::{Feedback, FeedbackGpu},
     buffer::BrickmapBuffer,
+    camera::CameraState,
     color::ColorPaletteState,
     config::RenderConfigState,
     ecs::World,
     pipeline::Pipeline,
+    scene::SceneState,
 };
 
 pub(crate) struct Graphics {
@@ -155,38 +155,39 @@ impl Graphics {
     }
 
     pub(crate) fn update(&mut self, pipeline: &Pipeline, world: &World) {
-        let brickgrid = world.resource::<Brickgrid>();
-        let visible_brickmaps = brickgrid.visible_brickmaps(world);
+        let camera = world.resource::<CameraState>();
+
+        let mut scene = world.resource_mut::<SceneState>();
 
         let render_config = *world.resource::<RenderConfigState>();
         let color_palette = world.resource::<ColorPaletteState>();
 
-        let mut brickgrid_data: Vec<BrickgridCell> =
-            vec![BrickgridCellData::Empty.into(); render_config.brickgrid_size.pow(3) as usize];
-
         let feedback = self.read_feedback(&pipeline.feedback_result_buffer);
 
-        for VisibleBrickmap {
-            mut brickmap,
-            brickgrid_index: index,
-        } in visible_brickmaps
-        {
-            let cell_data = self.state.brickmap_buffer.insert(
-                &mut brickmap,
-                index,
-                &color_palette,
-                &feedback,
-                pipeline,
-                &self.queue,
-            );
+        for idx in feedback.data {
+            let Some(brickmap) = scene.get_brickmap_by_index(idx) else {
+                continue;
+            };
 
-            brickgrid_data[index] = cell_data.into();
+            let cell =
+                self.state
+                    .brickmap_buffer
+                    .insert(&brickmap, &color_palette, pipeline, &self.queue);
+
+            if let Some(cell) = cell {
+                scene.update_brickgrid(idx, cell);
+            }
         }
+
+        scene.update(
+            &camera.position.to_brickmap_position(),
+            render_config.brickgrid_size,
+        );
 
         self.queue.write_buffer(
             &pipeline.brickgrid_buffer,
             0,
-            bytemuck::cast_slice(&brickgrid_data),
+            bytemuck::cast_slice(scene.to_brickgrid_gpu()),
         );
 
         self.queue.write_buffer(

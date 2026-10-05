@@ -74,6 +74,18 @@ impl From<&GridPosition> for Vec3 {
     }
 }
 
+impl std::ops::Sub for GridPosition {
+    type Output = GridPosition;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        GridPosition {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct WorldPosition {
     pub x: f32,

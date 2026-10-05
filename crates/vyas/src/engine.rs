@@ -8,7 +8,6 @@ use winit::{
 
 use crate::{
     app::AppConfig,
-    brickgrid::Brickgrid,
     camera::CameraState,
     color::ColorPaletteState,
     ecs::{CommandQueue, Res, ResMut, Resource, Schedule, System, World},
@@ -16,6 +15,7 @@ use crate::{
     graphics::Graphics,
     input::{InputButton, InputState},
     pipeline::Pipeline,
+    scene::SceneState,
 };
 
 pub(crate) struct Engine {
@@ -37,10 +37,16 @@ impl Engine {
         } = app_config;
 
         let mut world = World::new();
+
+        let camera_pos = camera_config.position.clone();
+
         world.insert_resource(InputState::new());
         world.insert_resource(CameraState::new(camera_config));
         world.insert_resource(render_config);
-        world.insert_resource(Brickgrid::new());
+        world.insert_resource(SceneState::new(
+            render_config.brickgrid_size,
+            camera_pos.to_brickmap_position(),
+        ));
         world.insert_resource(ColorPaletteState::new());
 
         for insert_resource in resources {

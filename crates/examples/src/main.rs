@@ -35,10 +35,10 @@ fn main() {
         .run();
 }
 
-fn load_scene(mut voxels: VoxelCommands, mut palette: ColorPalette) {
+fn load_scene(mut scene: Scene, mut palette: ColorPalette) {
     let path = "./crates/examples/assets/san-miguel.vox";
     let bytes = fs::read(path).expect("failed to read asset");
     let grid = vox::load_with_palette(&bytes, &mut palette).expect("failed to load vox model");
 
-    voxels.spawn_grid(grid);
+    scene.spawn(grid);
 }

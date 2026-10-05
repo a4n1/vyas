@@ -8,7 +8,6 @@ use crate::{
 pub(crate) struct Brickmap {
     pub(crate) position: GridPosition,
     pub(crate) voxels: HashMap<GridPosition, Voxel>,
-    pub(crate) dirty: bool,
 }
 
 impl Brickmap {
@@ -16,18 +15,11 @@ impl Brickmap {
         Self {
             position,
             voxels: HashMap::new(),
-            dirty: true,
         }
     }
 
     pub(crate) fn set_voxel(&mut self, position: GridPosition, voxel: Voxel) {
         self.voxels.insert(position, voxel);
-        self.dirty = true;
-    }
-
-    pub(crate) fn remove_voxel(&mut self, position: &GridPosition) {
-        self.voxels.remove(position);
-        self.dirty = true;
     }
 
     pub(crate) fn contains(&self, position: &GridPosition) -> bool {

@@ -30,7 +30,7 @@ impl Default for CameraConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CameraState {
     pub position: WorldPosition,
     pub looking_at: WorldPosition,

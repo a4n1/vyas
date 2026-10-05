@@ -1,11 +1,10 @@
 use glam::{BVec3A, IVec3, Vec3A, Vec3Swizzles};
 
 use crate::{
-    brickgrid::Brickgrid,
-    brickmap::Brickmap,
     config::{BRICKMAP_SIZE, RenderConfigState},
     ecs::World,
     position::{GridPosition, VoxelFace},
+    scene::SceneState,
 };
 
 #[derive(Debug, Clone)]
@@ -53,14 +52,12 @@ impl DDA {
         let brickmap_position = position.to_brickmap_position();
         let local_position = position.to_local_position();
 
-        let brickgrid = world.resource::<Brickgrid>();
-        let Some(entity) = brickgrid.get(&brickmap_position) else {
+        let scene = world.resource::<SceneState>();
+        let Some(brickmap) = scene.get_brickmap_by_position(&brickmap_position) else {
             return false;
         };
 
-        world
-            .get::<Brickmap>(*entity)
-            .is_some_and(|brickmap| brickmap.contains(&local_position))
+        brickmap.contains(&local_position)
     }
 }
 

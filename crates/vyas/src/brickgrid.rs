@@ -1,82 +1,20 @@
-use std::{
-    cell::RefMut,
-    collections::{HashMap, HashSet},
-};
+use std::collections::HashSet;
 
-use crate::{
-    brickmap::Brickmap,
-    camera::CameraState,
-    config::RenderConfigState,
-    ecs::{Entity, World},
-    position::GridPosition,
-};
-
+#[derive(Debug, Clone)]
 pub(crate) struct Brickgrid {
-    pub(crate) map: HashMap<GridPosition, Entity>,
+    pub(crate) data: Vec<BrickgridCell>,
 }
 
 impl Brickgrid {
-    pub(crate) fn new() -> Self {
-        Self {
-            map: HashMap::new(),
+    pub(crate) fn new(size: u32) -> Self {
+        Brickgrid {
+            data: vec![BrickgridCellData::Empty.into(); size.pow(3) as usize],
         }
     }
 
-    pub(crate) fn get(&self, position: &GridPosition) -> Option<&Entity> {
-        self.map.get(position)
+    pub(crate) fn size(&self) -> usize {
+        (self.data.len() as f32).cbrt() as usize
     }
-
-    pub(crate) fn insert(&mut self, position: GridPosition, entity: Entity) {
-        self.map.insert(position, entity);
-    }
-
-    pub(crate) fn visible_brickmaps<'a>(
-        &'a self,
-        world: &'a World,
-    ) -> impl Iterator<Item = VisibleBrickmap<'a>> {
-        let camera_brickmap_position = world
-            .resource::<CameraState>()
-            .position
-            .to_brickmap_position();
-        let render_config = *world.resource::<RenderConfigState>();
-
-        let brickgrid_size = render_config.brickgrid_size as i32;
-        let range = (brickgrid_size - 1) / 2;
-
-        self.map.iter().filter_map(move |(position, entity)| {
-            let x = position.x - camera_brickmap_position.x;
-            let y = camera_brickmap_position.y - position.y;
-            let z = camera_brickmap_position.z - position.z;
-
-            if !(-range..=range).contains(&x)
-                || !(-range..=range).contains(&y)
-                || !(-range..=range).contains(&z)
-            {
-                return None;
-            }
-
-            let index = GridPosition {
-                x: x + range,
-                y: y + range,
-                z: z + range,
-            }
-            .to_index(brickgrid_size);
-
-            let brickmap = world
-                .get_mut::<Brickmap>(*entity)
-                .expect("entity should have a brickmap component");
-
-            Some(VisibleBrickmap {
-                brickgrid_index: index,
-                brickmap,
-            })
-        })
-    }
-}
-
-pub(crate) struct VisibleBrickmap<'a> {
-    pub(crate) brickmap: RefMut<'a, Brickmap>,
-    pub(crate) brickgrid_index: usize,
 }
 
 /// Packed 32-bit cell representation:
@@ -151,13 +89,7 @@ pub(crate) struct FeedbackGpu {
 
 #[derive(Debug, Default)]
 pub(crate) struct Feedback {
-    data: HashSet<u32>,
-}
-
-impl Feedback {
-    pub(crate) fn is_requested(&self, position: u32) -> bool {
-        self.data.contains(&position)
-    }
+    pub(crate) data: HashSet<u32>,
 }
 
 impl From<&FeedbackGpu> for Feedback {

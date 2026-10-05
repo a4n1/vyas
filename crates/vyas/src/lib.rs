@@ -15,6 +15,7 @@ pub mod graphics;
 pub mod input;
 pub mod pipeline;
 pub mod position;
+pub mod scene;
 pub mod voxel;
 
 pub mod prelude {
@@ -28,5 +29,6 @@ pub mod prelude {
     pub use crate::ecs::*;
     pub use crate::input::*;
     pub use crate::position::*;
+    pub use crate::scene::*;
     pub use crate::voxel::*;
 }
