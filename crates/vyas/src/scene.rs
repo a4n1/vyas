@@ -4,6 +4,7 @@ use crate::{
     asset::Grid,
     brickgrid::{Brickgrid, BrickgridCell, BrickgridCellData},
     brickmap::Brickmap,
+    color::ColorPaletteState,
     config::RenderConfigState,
     ecs::{CommandQueue, SystemParam, World},
     prelude::GridPosition,
@@ -19,6 +20,7 @@ impl Scene {
         queue.borrow_mut().push(Box::new(move |world| {
             let mut scene = world.resource_mut::<SceneState>();
             let render_config = *world.resource::<RenderConfigState>();
+            let palette = world.resource::<ColorPaletteState>();
 
             for block in grid {
                 let brickmap_position = block.position.to_brickmap_position();
@@ -29,7 +31,7 @@ impl Scene {
                     .entry(brickmap_position.clone())
                     .or_insert_with(|| Brickmap::new(brickmap_position));
 
-                brickmap.set_voxel(local_position, block.voxel);
+                brickmap.set_voxel(local_position, block.voxel, &palette);
             }
 
             let size = render_config.brickgrid_size;

@@ -6,7 +6,6 @@ use wgpu::{Limits, Queue};
 use crate::{
     brickgrid::{BrickgridCell, BrickgridCellData},
     brickmap::{Brickmap, BrickmapGpu},
-    color::ColorPaletteState,
     pipeline::Pipeline,
     prelude::GridPosition,
 };
@@ -29,18 +28,14 @@ impl BrickmapBuffer {
     pub(crate) fn insert(
         &mut self,
         brickmap: &Brickmap,
-        color_palette: &ColorPaletteState,
         pipeline: &Pipeline,
         queue: &Queue,
     ) -> Option<BrickgridCell> {
-        let brickmap_gpu_data = brickmap.to_gpu(color_palette);
+        let brickmap_gpu_data = brickmap.to_gpu();
 
-        let mut color_data = brickmap_gpu_data.colors;
-        let padded_len = color_data.len().div_ceil(4) * 4;
-        color_data.resize(padded_len, 0);
         let color_allocation = self
             .colors
-            .alloc(color_data.len() as u64, &brickmap.position);
+            .alloc(brickmap_gpu_data.colors.len() as u64, &brickmap.position);
 
         let mut brickmap_gpu = brickmap_gpu_data.brickmap;
         let brickmap_allocation = self
@@ -52,7 +47,11 @@ impl BrickmapBuffer {
 
         let brickmap_data = [brickmap_gpu];
 
-        queue.write_buffer(&pipeline.color_buffer, color_allocation.offset, &color_data);
+        queue.write_buffer(
+            &pipeline.color_buffer,
+            color_allocation.offset,
+            &brickmap_gpu_data.colors,
+        );
 
         queue.write_buffer(
             &pipeline.brickmap_buffer,

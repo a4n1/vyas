@@ -169,10 +169,10 @@ impl Graphics {
                 continue;
             };
 
-            let cell =
-                self.state
-                    .brickmap_buffer
-                    .insert(&brickmap, &color_palette, pipeline, &self.queue);
+            let cell = self
+                .state
+                .brickmap_buffer
+                .insert(&brickmap, pipeline, &self.queue);
 
             if let Some(cell) = cell {
                 scene.update_brickgrid(idx, cell);

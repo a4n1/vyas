@@ -8,6 +8,7 @@ use crate::{
 pub(crate) struct Brickmap {
     pub(crate) position: GridPosition,
     pub(crate) voxels: HashMap<GridPosition, Voxel>,
+    pub(crate) gpu: BrickmapGpuData,
 }
 
 impl Brickmap {
@@ -15,11 +16,93 @@ impl Brickmap {
         Self {
             position,
             voxels: HashMap::new(),
+            gpu: BrickmapGpuData::default(),
         }
     }
 
-    pub(crate) fn set_voxel(&mut self, position: GridPosition, voxel: Voxel) {
-        self.voxels.insert(position, voxel);
+    pub(crate) fn set_voxel(
+        &mut self,
+        position: GridPosition,
+        voxel: Voxel,
+        color_palette: &ColorPaletteState,
+    ) {
+        let GridPosition { x, y, z } = position;
+        let prev = self.voxels.insert(position, voxel);
+
+        self.update_gpu_voxel(GridPosition { x, y, z }, color_palette);
+
+        let is_new = prev.is_none();
+
+        if !is_new {
+            return;
+        }
+
+        for neighbor in [
+            GridPosition { x: x + 1, y, z },
+            GridPosition { x: x - 1, y, z },
+            GridPosition { x, y: y + 1, z },
+            GridPosition { x, y: y - 1, z },
+            GridPosition { x, y, z: z + 1 },
+            GridPosition { x, y, z: z - 1 },
+        ] {
+            if self.voxels.contains_key(&neighbor) {
+                self.update_gpu_voxel(neighbor, color_palette);
+            }
+        }
+    }
+
+    fn update_gpu_voxel(&mut self, position: GridPosition, color_palette: &ColorPaletteState) {
+        let GridPosition { x, y, z } = position;
+
+        let index = position.to_index(BRICKMAP_SIZE as i32);
+
+        let word_index = index / 32;
+        let bit = 1u32 << (index % 32);
+        let solid_mask = &mut self.gpu.brickmap.solid_mask;
+
+        let color_index = solid_mask[..word_index]
+            .iter()
+            .map(|word| word.count_ones() as usize)
+            .sum::<usize>()
+            + (solid_mask[word_index] & (bit - 1)).count_ones() as usize;
+
+        let is_prev_hidden = solid_mask[word_index] & bit == 0;
+
+        let is_hidden = self.voxels.contains_key(&GridPosition { x: x + 1, y, z })
+            && self.voxels.contains_key(&GridPosition { x: x - 1, y, z })
+            && self.voxels.contains_key(&GridPosition { x, y: y + 1, z })
+            && self.voxels.contains_key(&GridPosition { x, y: y - 1, z })
+            && self.voxels.contains_key(&GridPosition { x, y, z: z + 1 })
+            && self.voxels.contains_key(&GridPosition { x, y, z: z - 1 });
+
+        if is_hidden && is_prev_hidden {
+            return;
+        }
+
+        if is_hidden && !is_prev_hidden {
+            solid_mask[word_index] &= !bit;
+            self.gpu.colors.remove(color_index);
+            return;
+        }
+
+        let Some(voxel) = self.voxels.get(&position) else {
+            return;
+        };
+
+        let Some(color) = color_palette.get(&voxel.palette_color) else {
+            log::warn!(
+                "{} does not exist in color palette",
+                voxel.palette_color.name()
+            );
+            return;
+        };
+
+        if is_prev_hidden {
+            solid_mask[word_index] |= bit;
+            self.gpu.colors.insert(color_index, color.index);
+        } else {
+            self.gpu.colors[color_index] = color.index;
+        }
     }
 
     pub(crate) fn contains(&self, position: &GridPosition) -> bool {
@@ -30,65 +113,26 @@ impl Brickmap {
         self.voxels.is_empty()
     }
 
-    pub(crate) fn to_gpu(&self, color_palette: &ColorPaletteState) -> BrickmapGpuData {
-        let mut solid_mask = [0u32; 16];
-        let mut colors: Vec<u8> = Vec::with_capacity(BRICKMAP_SIZE.pow(3) as usize);
+    pub(crate) fn to_gpu(&self) -> BrickmapGpuData {
+        let mut colors = self.gpu.colors.clone();
+        let padded_len = colors.len().div_ceil(4) * 4;
+        colors.resize(padded_len, 0);
 
-        for z in 0..BRICKMAP_SIZE {
-            for y in 0..BRICKMAP_SIZE {
-                for x in 0..BRICKMAP_SIZE {
-                    let x = x as i32;
-                    let y = y as i32;
-                    let z = z as i32;
-
-                    if self.voxels.contains_key(&GridPosition { x: x + 1, y, z })
-                        && self.voxels.contains_key(&GridPosition { x: x - 1, y, z })
-                        && self.voxels.contains_key(&GridPosition { x, y: y + 1, z })
-                        && self.voxels.contains_key(&GridPosition { x, y: y - 1, z })
-                        && self.voxels.contains_key(&GridPosition { x, y, z: z + 1 })
-                        && self.voxels.contains_key(&GridPosition { x, y, z: z - 1 })
-                    {
-                        continue;
-                    }
-
-                    if let Some(voxel) = self.voxels.get(&GridPosition { x, y, z }) {
-                        let Some(color) = color_palette.get(&voxel.palette_color) else {
-                            log::warn!(
-                                "{} does not exist in color palette",
-                                voxel.palette_color.name()
-                            );
-                            continue;
-                        };
-
-                        let index = GridPosition { x, y, z }.to_index(BRICKMAP_SIZE as i32);
-
-                        let word_index = index / 32;
-                        let bit_index = index % 32;
-
-                        solid_mask[word_index] |= 1u32 << bit_index;
-
-                        colors.push(color.index);
-                    }
-                }
-            }
+        BrickmapGpuData {
+            brickmap: self.gpu.brickmap,
+            colors,
         }
-
-        let brickmap = BrickmapGpu {
-            solid_mask,
-            color_index: 0,
-        };
-
-        BrickmapGpuData { brickmap, colors }
     }
 }
 
+#[derive(Debug, Default, Clone)]
 pub(crate) struct BrickmapGpuData {
     pub(crate) brickmap: BrickmapGpu,
     pub(crate) colors: Vec<u8>,
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct BrickmapGpu {
     pub(crate) solid_mask: [u32; 16],
     pub(crate) color_index: u32,
