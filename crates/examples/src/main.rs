@@ -7,6 +7,10 @@ use vyas::prelude::*;
 use crate::camera::NoClipCamera;
 
 fn main() {
+    let render_config = RenderConfigBuilder::new()
+        .resolution(Resolution::Scale(0.3))
+        .build();
+
     let camera = CameraConfig {
         position: WorldPosition {
             x: 59.115646,
@@ -25,6 +29,7 @@ fn main() {
     App::new()
         .set_camera(camera)
         .set_cursor_capture(true)
+        .set_render_config(render_config)
         .insert_resource(controller)
         .add_systems(Startup, load_scene)
         .add_systems(Startup, setup_lights)
@@ -58,9 +63,9 @@ fn setup_lights(mut commands: Commands) {
         }),
         illuminance: 0.75,
         direction: Direction {
-            x: 1.0,
-            y: 1.0,
-            z: 1.0,
+            x: 0.425,
+            y: -0.75,
+            z: 0.5,
         },
     });
 }

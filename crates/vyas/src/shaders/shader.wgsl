@@ -136,7 +136,14 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
                     vec3f(brickmapSize - 0.000001),
                 );
 
-                if raytraceBrickmap(position, localRayOrigin, traversalDirection, brickmap, entryFaceId) {
+                if raytraceBrickmap(
+                    position,
+                    localRayOrigin,
+                    traversalDirection,
+                    brickmap,
+                    entryFaceId,
+                    rayEntryDistance
+                ) {
                     return;
                 }
             } else if isUnloaded {
@@ -175,6 +182,7 @@ fn raytraceBrickmap(
     rayDirection: vec3f,
     brickmap: Brickmap,
     entryFaceId: u32,
+    rayEntryDistance: f32,
 ) -> bool {
     let brickmapSize = i32(config.brickmap_size);
 
@@ -189,6 +197,7 @@ fn raytraceBrickmap(
         + 0.5
     ) * deltaDist;
     var faceId = entryFaceId;
+    var voxelEntryDistance = 0.0;
 
     for (var i = 0; i < brickmapSize * 3; i++) {
         if any(mapPos < vec3i(0)) || any(mapPos >= vec3i(brickmapSize)) {
@@ -216,13 +225,161 @@ fn raytraceBrickmap(
             let paletteIndex = (packedColorIndices >> ((colorByteIndex % 4u) * 8u)) & 0xffu;
             let color = color_palette[paletteIndex];
 
+            let normal = normalFromFaceId(faceId);
+            let hitPosition = camera.position.xyz + rayDirection * (rayEntryDistance + voxelEntryDistance);
+
+            var visibility = 1u;
+            if faceId != 0u {
+                if raytraceShadow(hitPosition, normal) {
+                    visibility = 0u;
+                }
+            }
+
             textureStore(base_color_texture, position, vec4f(unpackColor(color), 1.0));
-            textureStore(surface_data_texture, position, vec4u(faceId, 0u, 0u, 0u));
+            textureStore(surface_data_texture, position, vec4u(faceId, visibility, 0u, 0u));
+
+            return true;
+        }
+
+        voxelEntryDistance = min(min(sideDist.x, sideDist.y), sideDist.z);
+        let mask = sideDist <= min(sideDist.yzx, sideDist.zxy);
+        faceId = faceIdFromNormal(-vec3i(mask) * rayStep);
+
+        sideDist += vec3f(mask) * deltaDist;
+        mapPos += vec3i(mask) * rayStep;
+    }
+
+    return false;
+}
+
+fn raytraceShadow(hitPosition: vec3f, normal: vec3f) -> bool {
+    const directionEpsilon = vec3f(0.000001);
+
+    let rayDirection = -lights.direction.xyz;
+    if dot(normal, rayDirection) <= 0.0 {
+        return false;
+    }
+
+    let brickgridSize = i32(config.brickgrid_size);
+    let brickmapSize = f32(config.brickmap_size);
+    let gridRange = (brickgridSize - 1) / 2;
+
+    let rayOrigin = hitPosition + normal * 0.001;
+
+    let brickmapRayOrigin = rayOrigin / brickmapSize;
+    let brickmapPosition = vec3i(floor(brickmapRayOrigin));
+    let cameraBrickmapPosition = vec3i(floor(camera.position.xyz / brickmapSize));
+    let traversalDirection = select(
+        directionEpsilon,
+        rayDirection,
+        abs(rayDirection) > directionEpsilon,
+    );
+
+    let stepDirection = vec3i(sign(traversalDirection));
+    let boundarySpacing = 1.0 / abs(traversalDirection);
+
+    var stepPosition = brickmapPosition;
+    var boundaryDistance = (
+        vec3f(stepDirection) * (vec3f(stepPosition) - brickmapRayOrigin)
+        + 0.5 * vec3f(stepDirection)
+        + 0.5
+    ) * boundarySpacing;
+    var rayEntryDistance = 0.0;
+
+    for (var i = 0; i < brickgridSize * 3; i++) {
+        let gridPosition = vec3i(
+            stepPosition.x - cameraBrickmapPosition.x + gridRange,
+            cameraBrickmapPosition.y - stepPosition.y + gridRange,
+            cameraBrickmapPosition.z - stepPosition.z + gridRange,
+        );
+
+        if any(gridPosition < vec3i(0)) || any(gridPosition >= vec3i(brickgridSize)) {
+            return false;
+        }
+
+        let index = getIndex(gridPosition, brickgridSize);
+        let brickgridCell = atomicLoad(&brickgrid[index]);
+
+        if brickgridCell != 0 {
+            const unloadedBit = 1u << 24u;
+            const requestedBit = 1u << 25u;
+
+            if (brickgridCell & unloadedBit) == 0u {
+                let brickmap = brickmaps[brickgridCell - 1u];
+                let localRayOrigin = clamp(
+                    rayOrigin
+                        + rayDirection * rayEntryDistance
+                        - vec3f(stepPosition) * brickmapSize,
+                    vec3f(0.0),
+                    vec3f(brickmapSize - 0.000001),
+                );
+
+                if raytraceShadowBrickmap(localRayOrigin, traversalDirection, brickmap) {
+                    return true;
+                }
+            } else {
+                let previous = atomicOr(&brickgrid[index], requestedBit);
+
+                if (previous & requestedBit) == 0u {
+                    let requestIndex = atomicAdd(&feedback.count, 1u);
+
+                    if requestIndex < 4096u {
+                        feedback.data[requestIndex] = index;
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        rayEntryDistance = min(
+            min(boundaryDistance.x, boundaryDistance.y),
+            boundaryDistance.z,
+        ) * brickmapSize;
+
+        let mask = boundaryDistance <= min(boundaryDistance.yzx, boundaryDistance.zxy);
+
+        boundaryDistance += vec3f(mask) * boundarySpacing;
+        stepPosition += vec3i(mask) * stepDirection;
+    }
+
+    return false;
+}
+
+fn raytraceShadowBrickmap(
+    localRayOrigin: vec3f,
+    rayDirection: vec3f,
+    brickmap: Brickmap,
+) -> bool {
+    let brickmapSize = i32(config.brickmap_size);
+
+    var mapPos = vec3i(floor(localRayOrigin));
+
+    let deltaDist = 1.0 / abs(rayDirection);
+    let rayStep = vec3i(sign(rayDirection));
+
+    var sideDist = (
+        vec3f(rayStep) * (vec3f(mapPos) - localRayOrigin)
+        + 0.5 * vec3f(rayStep)
+        + 0.5
+    ) * deltaDist;
+
+    for (var i = 0; i < brickmapSize * 3; i++) {
+        if any(mapPos < vec3i(0)) || any(mapPos >= vec3i(brickmapSize)) {
+            return false;
+        }
+
+        let voxelIndex = getIndex(mapPos, brickmapSize);
+        let wordIndex = voxelIndex / 32u;
+        let bitIndex = voxelIndex % 32u;
+
+        let isSolid = (brickmap.solid_mask[wordIndex] & (1u << bitIndex)) != 0u;
+
+        if isSolid {
             return true;
         }
 
         let mask = sideDist <= min(sideDist.yzx, sideDist.zxy);
-        faceId = faceIdFromNormal(-vec3i(mask) * rayStep);
 
         sideDist += vec3f(mask) * deltaDist;
         mapPos += vec3i(mask) * rayStep;
@@ -317,7 +474,9 @@ fn fs_main(input: Vertex) -> @location(0) vec4<f32> {
     let size = textureDimensions(surface_data_sampled);
     let pixel = min(vec2u(input.uv * vec2f(size)), size - vec2u(1u));
 
-    let faceId = textureLoad(surface_data_sampled, vec2i(pixel), 0).r;
+    let surface = textureLoad(surface_data_sampled, vec2i(pixel), 0);
+
+    let faceId = surface.r;
     if faceId == 0u {
         return color;
     }
@@ -329,6 +488,7 @@ fn fs_main(input: Vertex) -> @location(0) vec4<f32> {
 
     let ambient = lights.ambient_light.rgb * lights.ambient_light.a;
     let directional = lights.directional_light.rgb * lights.directional_light.a * diffuse;
+    let shadow = f32(surface.g);
 
-    return vec4f(color.rgb * (ambient + directional), color.a);
+    return vec4f(color.rgb * (ambient + directional * shadow), color.a);
 }
