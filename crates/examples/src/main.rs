@@ -9,6 +9,7 @@ use crate::camera::NoClipCamera;
 fn main() {
     let render_config = RenderConfigBuilder::new()
         .resolution(Resolution::Scale(0.3))
+        .crt(true)
         .build();
 
     let camera = CameraConfig {

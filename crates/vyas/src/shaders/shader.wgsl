@@ -9,6 +9,7 @@ var<uniform> camera: Camera;
 struct RenderConfig {
     brickmap_size: u32,
     brickgrid_size: u32,
+    crt: u32,
     fill_color: vec3f,
 };
 
@@ -490,5 +491,12 @@ fn fs_main(input: Vertex) -> @location(0) vec4<f32> {
     let directional = lights.directional_light.rgb * lights.directional_light.a * diffuse;
     let shadow = f32(surface.g);
 
-    return vec4f(color.rgb * (ambient + directional * shadow), color.a);
+    var crt_effect = 1.0;
+
+    if config.crt == 1 {
+        let banding = abs(sin(input.position.x));
+        crt_effect = mix(1.0, banding, 0.3);
+    }
+
+    return vec4f(color.rgb * (ambient + directional * shadow) * crt_effect, color.a);
 }

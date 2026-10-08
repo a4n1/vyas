@@ -14,6 +14,7 @@ pub struct RenderConfigState {
     pub fill_color: Color,
     pub resolution: Resolution,
     pub vsync: bool,
+    pub crt: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -40,6 +41,7 @@ impl Default for RenderConfigState {
             }),
             resolution: Resolution::default(),
             vsync: true,
+            crt: false,
         }
     }
 }
@@ -49,7 +51,8 @@ impl RenderConfigState {
         RenderConfigGpu {
             brickmap_size: self.brickmap_size,
             brickgrid_size: self.brickgrid_size,
-            _padding0: [0; 2],
+            crt: u32::from(self.crt),
+            _padding0: 0,
             fill_color: self.fill_color.into(),
             _padding1: 0,
         }
@@ -59,10 +62,11 @@ impl RenderConfigState {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RenderConfigGpu {
-    pub brickmap_size: u32,
-    pub brickgrid_size: u32,
-    _padding0: [u32; 2],
-    pub fill_color: [f32; 3],
+    brickmap_size: u32,
+    brickgrid_size: u32,
+    crt: u32,
+    _padding0: u32,
+    fill_color: [f32; 3],
     _padding1: u32,
 }
 
@@ -73,6 +77,7 @@ pub struct RenderConfigBuilder {
     fill_color: Option<Color>,
     resolution: Option<Resolution>,
     vsync: Option<bool>,
+    crt: Option<bool>,
 }
 
 impl RenderConfigBuilder {
@@ -105,6 +110,11 @@ impl RenderConfigBuilder {
         self
     }
 
+    pub fn crt(mut self, value: bool) -> Self {
+        self.crt = Some(value);
+        self
+    }
+
     pub fn build(self) -> RenderConfigState {
         let default = RenderConfigState::default();
 
@@ -114,6 +124,7 @@ impl RenderConfigBuilder {
             fill_color: self.fill_color.unwrap_or(default.fill_color),
             resolution: self.resolution.unwrap_or(default.resolution),
             vsync: self.vsync.unwrap_or(default.vsync),
+            crt: self.crt.unwrap_or(default.crt),
         }
     }
 }

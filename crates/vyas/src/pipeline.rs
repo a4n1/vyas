@@ -122,10 +122,14 @@ impl Pipeline {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
-        let base_color_texture = Self::create_base_color_texture(graphics, render_config.resolution);
-        let base_color_view = base_color_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let surface_data_texture = Self::create_surface_data_texture(graphics, base_color_texture.size());
-        let surface_data_view = surface_data_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let base_color_texture =
+            Self::create_base_color_texture(graphics, render_config.resolution);
+        let base_color_view =
+            base_color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let surface_data_texture =
+            Self::create_surface_data_texture(graphics, base_color_texture.size());
+        let surface_data_view =
+            surface_data_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let base_color_sampler = graphics.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("base-color-sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -318,6 +322,16 @@ impl Pipeline {
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     entries: &[
                         wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
                             binding: 7,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Buffer {
@@ -362,6 +376,10 @@ impl Pipeline {
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &render_bind_group_layout,
                 entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: render_config_buffer.as_entire_binding(),
+                    },
                     wgpu::BindGroupEntry {
                         binding: 7,
                         resource: lights_buffer.as_entire_binding(),
@@ -490,10 +508,14 @@ impl Pipeline {
     }
 
     pub(crate) fn resize(&mut self, graphics: &Graphics) {
-        let base_color_texture = Self::create_base_color_texture(graphics, self.render_config.resolution);
-        let base_color_view = base_color_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let surface_data_texture = Self::create_surface_data_texture(graphics, base_color_texture.size());
-        let surface_data_view = surface_data_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let base_color_texture =
+            Self::create_base_color_texture(graphics, self.render_config.resolution);
+        let base_color_view =
+            base_color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let surface_data_texture =
+            Self::create_surface_data_texture(graphics, base_color_texture.size());
+        let surface_data_view =
+            surface_data_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         self.rebuild_scene_bind_group(graphics, &base_color_view, &surface_data_view);
 
@@ -502,6 +524,10 @@ impl Pipeline {
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &self.render_bind_group_layout,
                 entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.render_config_buffer.as_entire_binding(),
+                    },
                     wgpu::BindGroupEntry {
                         binding: 7,
                         resource: self.lights_buffer.as_entire_binding(),
