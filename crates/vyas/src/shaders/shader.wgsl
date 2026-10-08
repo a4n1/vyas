@@ -40,14 +40,29 @@ var<storage, read> brickmaps: array<Brickmap>;
 @group(0) @binding(6)
 var<storage, read> colors: array<u32>;
 
+struct Lights {
+    ambient_light: vec4f,
+    directional_light: vec4f,
+    direction: vec4f,
+};
+
 @group(0) @binding(7)
-var output_texture: texture_storage_2d<rgba16float, write>;
+var<uniform> lights: Lights;
 
 @group(0) @binding(8)
-var output_sampled: texture_2d<f32>;
+var base_color_texture: texture_storage_2d<rgba16float, write>;
 
 @group(0) @binding(9)
-var output_sampler: sampler;
+var base_color_sampled: texture_2d<f32>;
+
+@group(0) @binding(10)
+var surface_data_texture: texture_storage_2d<rgba8uint, write>;
+
+@group(0) @binding(11)
+var surface_data_sampled: texture_2d<u32>;
+
+@group(0) @binding(12)
+var base_color_sampler: sampler;
 
 @compute @workgroup_size(8, 8) 
 fn raytrace(@builtin(global_invocation_id) id: vec3u) {
@@ -57,14 +72,15 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
     let brickmapSize = f32(config.brickmap_size);
     let gridRange = (brickgridSize - 1) / 2;
 
-    let dimensions = textureDimensions(output_texture);
+    let dimensions = textureDimensions(base_color_texture);
 
     if (id.x >= dimensions.x || id.y >= dimensions.y) {
         return;
     }
 
     let position = id.xy;
-    textureStore(output_texture, position, vec4f(config.fill_color, 1.0));
+    textureStore(base_color_texture, position, vec4f(config.fill_color, 1.0));
+    textureStore(surface_data_texture, position, vec4u(0u));
 
     let rayOrigin = camera.position.xyz;
     let rayDirection = getRayDirection(vec2f(position), vec2f(dimensions));
@@ -87,6 +103,7 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
         + 0.5
     ) * boundarySpacing;
     var rayEntryDistance = 0.0;
+    var entryFaceId = 0u;
 
     for (var i = 0; i < brickgridSize * 3; i++) {
         let gridPosition = vec3i(
@@ -119,7 +136,7 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
                     vec3f(brickmapSize - 0.000001),
                 );
 
-                if raytraceBrickmap(position, localRayOrigin, traversalDirection, brickmap) {
+                if raytraceBrickmap(position, localRayOrigin, traversalDirection, brickmap, entryFaceId) {
                     return;
                 }
             } else if isUnloaded {
@@ -143,12 +160,13 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
         ) * brickmapSize;
 
         let mask = boundaryDistance <= min(boundaryDistance.yzx, boundaryDistance.zxy);
+        entryFaceId = faceIdFromNormal(-vec3i(mask) * stepDirection);
 
         boundaryDistance += vec3f(mask) * boundarySpacing;
         stepPosition += vec3i(mask) * stepDirection;
     }
 
-    textureStore(output_texture, position, vec4f(config.fill_color, 1.0));
+    textureStore(base_color_texture, position, vec4f(config.fill_color, 1.0));
 }
 
 fn raytraceBrickmap(
@@ -156,6 +174,7 @@ fn raytraceBrickmap(
     localRayOrigin: vec3f,
     rayDirection: vec3f,
     brickmap: Brickmap,
+    entryFaceId: u32,
 ) -> bool {
     let brickmapSize = i32(config.brickmap_size);
 
@@ -169,6 +188,7 @@ fn raytraceBrickmap(
         + 0.5 * vec3f(rayStep)
         + 0.5
     ) * deltaDist;
+    var faceId = entryFaceId;
 
     for (var i = 0; i < brickmapSize * 3; i++) {
         if any(mapPos < vec3i(0)) || any(mapPos >= vec3i(brickmapSize)) {
@@ -196,17 +216,37 @@ fn raytraceBrickmap(
             let paletteIndex = (packedColorIndices >> ((colorByteIndex % 4u) * 8u)) & 0xffu;
             let color = color_palette[paletteIndex];
 
-            textureStore(output_texture, position, vec4f(unpackColor(color), 1.0));
+            textureStore(base_color_texture, position, vec4f(unpackColor(color), 1.0));
+            textureStore(surface_data_texture, position, vec4u(faceId, 0u, 0u, 0u));
             return true;
         }
 
         let mask = sideDist <= min(sideDist.yzx, sideDist.zxy);
+        faceId = faceIdFromNormal(-vec3i(mask) * rayStep);
 
         sideDist += vec3f(mask) * deltaDist;
         mapPos += vec3i(mask) * rayStep;
     }
 
     return false;
+}
+
+fn getIndex(position: vec3i, size: i32) -> u32 {
+    return u32(position.x + position.y * size + position.z * size * size);
+}
+
+fn getRayDirection(position: vec2f, dimensions: vec2f) -> vec3f {
+    let uv = (position + vec2f(0.5)) / dimensions;
+
+    let ndc = vec2f(
+        uv.x * 2.0 - 1.0,
+        1.0 - uv.y * 2.0
+    );
+
+    let worldH = camera.inverse_view_proj * vec4f(ndc, 1.0, 1.0);
+    let world = worldH.xyz / worldH.w;
+
+    return normalize(world - camera.position.xyz);
 }
 
 fn unpackColor(color: u32) -> vec3f {
@@ -227,22 +267,26 @@ fn srgbToLinear(color: vec3f) -> vec3f {
     );
 }
 
-fn getRayDirection(position: vec2f, dimensions: vec2f) -> vec3f {
-    let uv = (position + vec2f(0.5)) / dimensions;
-
-    let ndc = vec2f(
-        uv.x * 2.0 - 1.0,
-        1.0 - uv.y * 2.0
-    );
-
-    let worldH = camera.inverse_view_proj * vec4f(ndc, 1.0, 1.0);
-    let world = worldH.xyz / worldH.w;
-
-    return normalize(world - camera.position.xyz);
+fn faceIdFromNormal(normal: vec3i) -> u32 {
+    if normal.x < 0 { return 1u; }
+    if normal.x > 0 { return 2u; }
+    if normal.y < 0 { return 3u; }
+    if normal.y > 0 { return 4u; }
+    if normal.z < 0 { return 5u; }
+    if normal.z > 0 { return 6u; }
+    return 0u;
 }
 
-fn getIndex(position: vec3i, size: i32) -> u32 {
-    return u32(position.x + position.y * size + position.z * size * size);
+fn normalFromFaceId(faceId: u32) -> vec3f {
+    switch faceId {
+        case 1u: { return vec3f(-1.0, 0.0, 0.0); }
+        case 2u: { return vec3f(1.0, 0.0, 0.0); }
+        case 3u: { return vec3f(0.0, -1.0, 0.0); }
+        case 4u: { return vec3f(0.0, 1.0, 0.0); }
+        case 5u: { return vec3f(0.0, 0.0, -1.0); }
+        case 6u: { return vec3f(0.0, 0.0, 1.0); }
+        default: { return vec3f(0.0); }
+    }
 }
 
 struct Vertex {
@@ -268,5 +312,23 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> Vertex {
 
 @fragment
 fn fs_main(input: Vertex) -> @location(0) vec4<f32> {
-    return textureSample(output_sampled, output_sampler, input.uv);
+    let color = textureSample(base_color_sampled, base_color_sampler, input.uv);
+
+    let size = textureDimensions(surface_data_sampled);
+    let pixel = min(vec2u(input.uv * vec2f(size)), size - vec2u(1u));
+
+    let faceId = textureLoad(surface_data_sampled, vec2i(pixel), 0).r;
+    if faceId == 0u {
+        return color;
+    }
+
+    let normal = normalFromFaceId(faceId);
+
+    let directionToLight = -lights.direction.xyz;
+    let diffuse = max(dot(normal, directionToLight), 0.0);
+
+    let ambient = lights.ambient_light.rgb * lights.ambient_light.a;
+    let directional = lights.directional_light.rgb * lights.directional_light.a * diffuse;
+
+    return vec4f(color.rgb * (ambient + directional), color.a);
 }

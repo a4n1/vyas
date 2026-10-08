@@ -6,43 +6,34 @@ use crate::{
     brickmap::Brickmap,
     color::ColorPaletteState,
     config::RenderConfigState,
-    ecs::{CommandQueue, SystemParam, World},
+    ecs::{Bundle, Entity, World},
     prelude::GridPosition,
 };
 
 pub struct Scene {
-    queue: *const CommandQueue,
+    pub grid: Grid,
 }
 
-impl Scene {
-    pub fn spawn(&mut self, grid: Grid) {
-        let queue = unsafe { &*self.queue };
-        queue.borrow_mut().push(Box::new(move |world| {
-            let mut scene = world.resource_mut::<SceneState>();
-            let render_config = *world.resource::<RenderConfigState>();
-            let palette = world.resource::<ColorPaletteState>();
+impl Bundle for Scene {
+    fn insert_into(self, _entity: Entity, world: &mut World) {
+        let mut scene = world.resource_mut::<SceneState>();
+        let render_config = *world.resource::<RenderConfigState>();
+        let palette = world.resource::<ColorPaletteState>();
 
-            for block in grid {
-                let brickmap_position = block.position.to_brickmap_position();
-                let local_position = block.position.to_local_position();
+        for block in self.grid {
+            let brickmap_position = block.position.to_brickmap_position();
+            let local_position = block.position.to_local_position();
 
-                let brickmap = scene
-                    .brickmaps
-                    .entry(brickmap_position.clone())
-                    .or_insert_with(|| Brickmap::new(brickmap_position));
+            let brickmap = scene
+                .brickmaps
+                .entry(brickmap_position.clone())
+                .or_insert_with(|| Brickmap::new(brickmap_position));
 
-                brickmap.set_voxel(local_position, block.voxel, &palette);
-            }
+            brickmap.set_voxel(local_position, block.voxel, &palette);
+        }
 
-            let size = render_config.brickgrid_size;
-            scene.rebuild(size);
-        }));
-    }
-}
-
-impl SystemParam for Scene {
-    fn get(_world: *const World, commands: *const CommandQueue) -> Self {
-        Self { queue: commands }
+        let size = render_config.brickgrid_size;
+        scene.rebuild(size);
     }
 }
 

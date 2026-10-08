@@ -1,3 +1,4 @@
+use bytemuck::Zeroable;
 use wgpu::{Limits, util::DeviceExt};
 
 use crate::{
@@ -7,6 +8,7 @@ use crate::{
     config::{RenderConfigState, Resolution},
     ecs::World,
     graphics::Graphics,
+    light::LightsGpu,
 };
 
 pub struct Pipeline {
@@ -14,13 +16,15 @@ pub struct Pipeline {
     pub(crate) camera_buffer: wgpu::Buffer,
     pub(crate) render_config: RenderConfigState,
     pub(crate) render_config_buffer: wgpu::Buffer,
+    pub(crate) lights_buffer: wgpu::Buffer,
     pub(crate) color_palette_buffer: wgpu::Buffer,
     scene_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) scene_bind_group: wgpu::BindGroup,
     render_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) render_bind_group: wgpu::BindGroup,
-    output_sampler: wgpu::Sampler,
-    output_texture: wgpu::Texture,
+    base_color_sampler: wgpu::Sampler,
+    base_color_texture: wgpu::Texture,
+    surface_data_texture: wgpu::Texture,
     pub(crate) compute_pipeline: wgpu::ComputePipeline,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
     pub(crate) brickgrid_buffer: wgpu::Buffer,
@@ -110,11 +114,20 @@ impl Pipeline {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
-        let output_texture = Self::create_output_texture(graphics, render_config.resolution);
+        let lights_buffer = graphics
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("lights-buffer"),
+                contents: bytemuck::bytes_of(&LightsGpu::zeroed()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
-        let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let output_sampler = graphics.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("output-sampler"),
+        let base_color_texture = Self::create_base_color_texture(graphics, render_config.resolution);
+        let base_color_view = base_color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let surface_data_texture = Self::create_surface_data_texture(graphics, base_color_texture.size());
+        let surface_data_view = surface_data_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let base_color_sampler = graphics.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("base-color-sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
@@ -198,9 +211,29 @@ impl Pipeline {
                         wgpu::BindGroupLayoutEntry {
                             binding: 7,
                             visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 8,
+                            visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::StorageTexture {
                                 access: wgpu::StorageTextureAccess::WriteOnly,
                                 format: wgpu::TextureFormat::Rgba16Float,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 10,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::StorageTexture {
+                                access: wgpu::StorageTextureAccess::WriteOnly,
+                                format: wgpu::TextureFormat::Rgba8Uint,
                                 view_dimension: wgpu::TextureViewDimension::D2,
                             },
                             count: None,
@@ -244,7 +277,15 @@ impl Pipeline {
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: wgpu::BindingResource::TextureView(&output_view),
+                        resource: lights_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::TextureView(&base_color_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: wgpu::BindingResource::TextureView(&surface_data_view),
                     },
                 ],
                 label: Some("scene-bind-group"),
@@ -277,7 +318,17 @@ impl Pipeline {
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     entries: &[
                         wgpu::BindGroupLayoutEntry {
-                            binding: 8,
+                            binding: 7,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 9,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -287,7 +338,17 @@ impl Pipeline {
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
-                            binding: 9,
+                            binding: 11,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Uint,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 12,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
@@ -302,12 +363,20 @@ impl Pipeline {
                 layout: &render_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
-                        binding: 8,
-                        resource: wgpu::BindingResource::TextureView(&output_view),
+                        binding: 7,
+                        resource: lights_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 9,
-                        resource: wgpu::BindingResource::Sampler(&output_sampler),
+                        resource: wgpu::BindingResource::TextureView(&base_color_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: wgpu::BindingResource::TextureView(&surface_data_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 12,
+                        resource: wgpu::BindingResource::Sampler(&base_color_sampler),
                     },
                 ],
                 label: Some("render-bind-group"),
@@ -367,13 +436,15 @@ impl Pipeline {
             camera_buffer,
             render_config,
             render_config_buffer,
+            lights_buffer,
             color_palette_buffer,
             scene_bind_group_layout,
             scene_bind_group,
             render_bind_group_layout,
             render_bind_group,
-            output_sampler,
-            output_texture,
+            base_color_sampler,
+            base_color_texture,
+            surface_data_texture,
             compute_pipeline,
             render_pipeline,
             brickgrid_buffer,
@@ -385,7 +456,7 @@ impl Pipeline {
     }
 
     pub(crate) fn output_size(&self) -> wgpu::Extent3d {
-        self.output_texture.size()
+        self.base_color_texture.size()
     }
 
     pub(crate) fn update(&mut self, graphics: &Graphics, world: &World) {
@@ -419,10 +490,12 @@ impl Pipeline {
     }
 
     pub(crate) fn resize(&mut self, graphics: &Graphics) {
-        let output_texture = Self::create_output_texture(graphics, self.render_config.resolution);
-        let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let base_color_texture = Self::create_base_color_texture(graphics, self.render_config.resolution);
+        let base_color_view = base_color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let surface_data_texture = Self::create_surface_data_texture(graphics, base_color_texture.size());
+        let surface_data_view = surface_data_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        self.rebuild_scene_bind_group(graphics, &output_view);
+        self.rebuild_scene_bind_group(graphics, &base_color_view, &surface_data_view);
 
         self.render_bind_group = graphics
             .device
@@ -430,21 +503,35 @@ impl Pipeline {
                 layout: &self.render_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
-                        binding: 8,
-                        resource: wgpu::BindingResource::TextureView(&output_view),
+                        binding: 7,
+                        resource: self.lights_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 9,
-                        resource: wgpu::BindingResource::Sampler(&self.output_sampler),
+                        resource: wgpu::BindingResource::TextureView(&base_color_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: wgpu::BindingResource::TextureView(&surface_data_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 12,
+                        resource: wgpu::BindingResource::Sampler(&self.base_color_sampler),
                     },
                 ],
                 label: Some("render-bind-group"),
             });
 
-        self.output_texture = output_texture;
+        self.base_color_texture = base_color_texture;
+        self.surface_data_texture = surface_data_texture;
     }
 
-    fn rebuild_scene_bind_group(&mut self, graphics: &Graphics, output_view: &wgpu::TextureView) {
+    fn rebuild_scene_bind_group(
+        &mut self,
+        graphics: &Graphics,
+        base_color_view: &wgpu::TextureView,
+        surface_data_view: &wgpu::TextureView,
+    ) {
         self.scene_bind_group = graphics
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
@@ -480,14 +567,22 @@ impl Pipeline {
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: wgpu::BindingResource::TextureView(output_view),
+                        resource: self.lights_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::TextureView(base_color_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: wgpu::BindingResource::TextureView(surface_data_view),
                     },
                 ],
                 label: Some("scene-bind-group"),
             });
     }
 
-    fn create_output_texture(graphics: &Graphics, resolution: Resolution) -> wgpu::Texture {
+    fn create_base_color_texture(graphics: &Graphics, resolution: Resolution) -> wgpu::Texture {
         let (width, height) = match resolution {
             Resolution::Scale(scale) => {
                 let width = ((graphics.surface_config.width as f64 * scale).floor() as u32).max(1);
@@ -500,7 +595,7 @@ impl Pipeline {
         };
 
         graphics.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("output-texture"),
+            label: Some("base-color-texture"),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -510,6 +605,19 @@ impl Pipeline {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+    }
+
+    fn create_surface_data_texture(graphics: &Graphics, size: wgpu::Extent3d) -> wgpu::Texture {
+        graphics.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("surface-data-texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Uint,
             usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         })

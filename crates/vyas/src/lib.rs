@@ -13,6 +13,7 @@ pub mod engine;
 pub mod fps;
 pub mod graphics;
 pub mod input;
+pub mod light;
 pub mod pipeline;
 pub mod position;
 pub mod scene;
@@ -28,6 +29,7 @@ pub mod prelude {
     pub use crate::dda::*;
     pub use crate::ecs::*;
     pub use crate::input::*;
+    pub use crate::light::*;
     pub use crate::position::*;
     pub use crate::scene::*;
     pub use crate::voxel::*;

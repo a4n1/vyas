@@ -13,6 +13,7 @@ use crate::{
     color::ColorPaletteState,
     config::RenderConfigState,
     ecs::World,
+    light::{AmbientLight, DirectionalLight, LightsGpu},
     pipeline::Pipeline,
     scene::SceneState,
 };
@@ -169,6 +170,10 @@ impl Graphics {
         let mut scene = world.resource_mut::<SceneState>();
         let color_palette = world.resource::<ColorPaletteState>();
 
+        let ambient_light = world.resource::<AmbientLight>();
+        let directional_light = world.resource::<DirectionalLight>();
+        let lights = LightsGpu::new(&ambient_light, &directional_light);
+
         let feedback = self.read_feedback(&pipeline.feedback_result_buffer);
 
         for idx in feedback.data {
@@ -207,6 +212,12 @@ impl Graphics {
             &pipeline.render_config_buffer,
             0,
             bytemuck::cast_slice(&[pipeline.render_config.to_gpu()]),
+        );
+
+        self.queue.write_buffer(
+            &pipeline.lights_buffer,
+            0,
+            bytemuck::bytes_of(&lights),
         );
 
         self.queue.write_buffer(

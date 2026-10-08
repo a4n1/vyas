@@ -150,3 +150,10 @@ impl VoxelFace {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Direction {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}

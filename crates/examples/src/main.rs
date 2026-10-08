@@ -27,14 +27,40 @@ fn main() {
         .set_cursor_capture(true)
         .insert_resource(controller)
         .add_systems(Startup, load_scene)
+        .add_systems(Startup, setup_lights)
         .add_systems(Update, NoClipCamera::update)
         .run();
 }
 
-fn load_scene(mut scene: Scene, mut palette: ColorPalette) {
+fn load_scene(mut commands: Commands, mut palette: ColorPalette) {
     let path = "./crates/examples/assets/san-miguel.vox";
     let bytes = fs::read(path).expect("failed to read asset");
     let grid = vox::load_with_palette(&bytes, &mut palette).expect("failed to load vox model");
 
-    scene.spawn(grid);
+    commands.spawn(Scene { grid });
+}
+
+fn setup_lights(mut commands: Commands) {
+    commands.spawn(AmbientLight {
+        color: Color::Srgb(Srgb {
+            r: 255,
+            g: 255,
+            b: 255,
+        }),
+        brightness: 0.25,
+    });
+
+    commands.spawn(DirectionalLight {
+        color: Color::Srgb(Srgb {
+            r: 255,
+            g: 255,
+            b: 255,
+        }),
+        illuminance: 0.75,
+        direction: Direction {
+            x: 1.0,
+            y: 1.0,
+            z: 1.0,
+        },
+    });
 }
