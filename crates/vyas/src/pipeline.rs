@@ -487,8 +487,8 @@ impl Pipeline {
             });
     }
 
-    fn create_output_texture(graphics: &Graphics, resolution: Option<Resolution>) -> wgpu::Texture {
-        let (width, height) = match resolution.unwrap_or_default() {
+    fn create_output_texture(graphics: &Graphics, resolution: Resolution) -> wgpu::Texture {
+        let (width, height) = match resolution {
             Resolution::Scale(scale) => {
                 let width = ((graphics.surface_config.width as f64 * scale).floor() as u32).max(1);
                 let height =

@@ -7,9 +7,6 @@ use vyas::prelude::*;
 use crate::camera::NoClipCamera;
 
 fn main() {
-    let mut render_config = RenderConfigState::default();
-    render_config.brickgrid_size = 129;
-
     let camera = CameraConfig {
         position: WorldPosition {
             x: 59.115646,
@@ -27,7 +24,6 @@ fn main() {
 
     App::new()
         .set_camera(camera)
-        .set_render_config(render_config)
         .set_cursor_capture(true)
         .insert_resource(controller)
         .add_systems(Startup, load_scene)

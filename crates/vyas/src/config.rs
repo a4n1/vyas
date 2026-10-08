@@ -12,7 +12,8 @@ pub struct RenderConfigState {
     pub brickgrid_size: u32,
     brickmap_size: u32,
     pub fill_color: Color,
-    pub resolution: Option<Resolution>,
+    pub resolution: Resolution,
+    pub vsync: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -30,14 +31,15 @@ impl Default for Resolution {
 impl Default for RenderConfigState {
     fn default() -> Self {
         Self {
-            brickgrid_size: 257,
+            brickgrid_size: 128,
             brickmap_size: BRICKMAP_SIZE,
             fill_color: Color::Srgb(Srgb {
                 r: 25,
                 g: 25,
                 b: 25,
             }),
-            resolution: None,
+            resolution: Resolution::default(),
+            vsync: true,
         }
     }
 }
@@ -70,6 +72,7 @@ pub struct RenderConfigBuilder {
     brickmap_size: Option<u32>,
     fill_color: Option<Color>,
     resolution: Option<Resolution>,
+    vsync: Option<bool>,
 }
 
 impl RenderConfigBuilder {
@@ -97,6 +100,11 @@ impl RenderConfigBuilder {
         self
     }
 
+    pub fn vsync(mut self, value: bool) -> Self {
+        self.vsync = Some(value);
+        self
+    }
+
     pub fn build(self) -> RenderConfigState {
         let default = RenderConfigState::default();
 
@@ -104,7 +112,8 @@ impl RenderConfigBuilder {
             brickgrid_size: self.brickgrid_size.unwrap_or(default.brickgrid_size),
             brickmap_size: self.brickmap_size.unwrap_or(default.brickmap_size),
             fill_color: self.fill_color.unwrap_or(default.fill_color),
-            resolution: self.resolution.or(default.resolution),
+            resolution: self.resolution.unwrap_or(default.resolution),
+            vsync: self.vsync.unwrap_or(default.vsync),
         }
     }
 }

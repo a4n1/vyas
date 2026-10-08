@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, mpsc},
 };
 
+use wgpu::PresentMode;
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
@@ -35,7 +36,7 @@ struct State {
 }
 
 impl Graphics {
-    pub(crate) async fn new(window: Arc<Window>) -> Self {
+    pub(crate) async fn new(window: Arc<Window>, render_config: &RenderConfigState) -> Self {
         let size = window.inner_size();
 
         let instance_descriptor = wgpu::InstanceDescriptor {
@@ -103,7 +104,7 @@ impl Graphics {
             },
             width: render_size.width,
             height: render_size.height,
-            present_mode: surface_caps.present_modes[0],
+            present_mode: Self::get_present_mode(render_config.vsync),
             alpha_mode: surface_caps.alpha_modes[0],
             desired_maximum_frame_latency: 2,
             view_formats: if supports_srgb_surface_view {
@@ -155,11 +156,17 @@ impl Graphics {
     }
 
     pub(crate) fn update(&mut self, pipeline: &Pipeline, world: &World) {
-        let camera = world.resource::<CameraState>();
-
-        let mut scene = world.resource_mut::<SceneState>();
-
         let render_config = *world.resource::<RenderConfigState>();
+
+        let present_mode = Self::get_present_mode(render_config.vsync);
+
+        if present_mode != self.surface_config.present_mode {
+            self.surface_config.present_mode = present_mode;
+            self.state.is_surface_configured = false;
+        }
+
+        let camera = world.resource::<CameraState>();
+        let mut scene = world.resource_mut::<SceneState>();
         let color_palette = world.resource::<ColorPaletteState>();
 
         let feedback = self.read_feedback(&pipeline.feedback_result_buffer);
@@ -172,7 +179,7 @@ impl Graphics {
             let cell = self
                 .state
                 .brickmap_buffer
-                .insert(&brickmap, pipeline, &self.queue);
+                .insert(brickmap, pipeline, &self.queue);
 
             if let Some(cell) = cell {
                 scene.update_brickgrid(idx, cell);
@@ -363,6 +370,14 @@ impl Graphics {
 
         output.present();
         self.window.request_redraw();
+    }
+
+    fn get_present_mode(vsync: bool) -> PresentMode {
+        if vsync {
+            PresentMode::AutoVsync
+        } else {
+            PresentMode::AutoNoVsync
+        }
     }
 
     fn render_size(size: PhysicalSize<u32>, max_texture_dimension_2d: u32) -> PhysicalSize<u32> {

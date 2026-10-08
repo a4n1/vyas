@@ -53,7 +53,7 @@ impl Engine {
             insert_resource(&mut world);
         }
 
-        let graphics = Graphics::new(window).await;
+        let graphics = Graphics::new(window, &render_config).await;
         let pipeline = Pipeline::new(&graphics, &world);
         let fps_counter = FpsCounter::new();
 
