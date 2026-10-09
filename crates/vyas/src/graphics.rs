@@ -124,16 +124,10 @@ impl Graphics {
         };
 
         #[cfg(feature = "egui")]
-        let egui_format = if supports_srgb_surface_view {
-            surface_config.format.add_srgb_suffix()
-        } else {
-            surface_config.format
-        };
-        #[cfg(feature = "egui")]
         let egui = Egui::new(
             &window,
             &device,
-            egui_format,
+            surface_config.format,
             max_texture_dimension_2d,
             egui,
         );
@@ -330,6 +324,9 @@ impl Graphics {
             ..Default::default()
         });
 
+        #[cfg(feature = "egui")]
+        let egui_view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -401,7 +398,7 @@ impl Graphics {
             &self.device,
             &self.queue,
             encoder,
-            &view,
+            &egui_view,
             [self.surface_config.width, self.surface_config.height],
             world,
         );

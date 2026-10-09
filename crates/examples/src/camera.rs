@@ -1,4 +1,4 @@
-use std::time::Instant;
+use web_time::Instant;
 
 use glam::Vec3;
 use vyas::prelude::*;

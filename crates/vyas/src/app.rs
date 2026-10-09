@@ -130,17 +130,34 @@ impl App {
         self
     }
 
+    fn is_cursor_captured(&self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            web_sys::window()
+                .and_then(|window| window.document())
+                .and_then(|document| document.pointer_lock_element())
+                .is_some_and(|element| element.id() == CANVAS_ID)
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.cursor_captured
+        }
+    }
+
     fn set_cursor_captured(&mut self, captured: bool) {
         self.client.with_mut(|client| {
             let window = client.window();
 
             if captured {
+                #[cfg(target_arch = "wasm32")]
+                window.focus_window();
+
                 let captured = window
                     .set_cursor_grab(CursorGrabMode::Locked)
                     .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined))
                     .is_ok();
 
-                window.set_cursor_visible(!captured);
+                window.set_cursor_visible(!captured || cfg!(target_arch = "wasm32"));
                 self.cursor_captured = captured;
 
                 #[cfg(target_os = "macos")]
@@ -292,7 +309,7 @@ impl ApplicationHandler<Client> for App {
                     ..
                 } if state.is_pressed() => self.set_cursor_captured(false),
                 WindowEvent::MouseInput { state, .. }
-                    if state.is_pressed() && !self.cursor_captured =>
+                    if state.is_pressed() && !self.is_cursor_captured() =>
                 {
                     self.set_cursor_captured(true)
                 }
@@ -367,7 +384,7 @@ impl ApplicationHandler<Client> for App {
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        if self.cursor_captured
+        if self.is_cursor_captured()
             && let DeviceEvent::MouseMotion { delta } = event
         {
             #[cfg(feature = "egui")]
