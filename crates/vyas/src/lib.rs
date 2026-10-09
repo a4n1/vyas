@@ -9,6 +9,8 @@ pub mod color;
 pub mod config;
 pub mod dda;
 pub mod ecs;
+#[cfg(feature = "egui")]
+pub mod egui;
 pub mod engine;
 pub mod fps;
 pub mod graphics;

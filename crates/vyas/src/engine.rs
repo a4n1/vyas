@@ -1,5 +1,7 @@
 use std::{cell::RefCell, sync::Arc};
 
+#[cfg(feature = "egui")]
+use winit::event::WindowEvent;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::MouseScrollDelta,
@@ -34,6 +36,7 @@ impl Engine {
             render_config,
             systems,
             resources,
+            ..
         } = app_config;
 
         let mut world = World::new();
@@ -53,6 +56,9 @@ impl Engine {
             insert_resource(&mut world);
         }
 
+        #[cfg(feature = "egui")]
+        let graphics = Graphics::new(window, &render_config, app_config.egui).await;
+        #[cfg(not(feature = "egui"))]
         let graphics = Graphics::new(window, &render_config).await;
         let pipeline = Pipeline::new(&graphics, &world);
         let fps_counter = FpsCounter::new();
@@ -118,6 +124,27 @@ impl Engine {
     pub(crate) fn handle_button_press(&mut self, button: InputButton, pressed: bool) {
         let mut input_state = self.world.resource_mut::<InputState>();
         input_state.insert_pressed(button, pressed);
+    }
+
+    #[cfg(feature = "egui")]
+    pub(crate) fn handle_window_event(&mut self, event: &WindowEvent) -> bool {
+        let graphics = &mut self.graphics;
+        let response = graphics.egui.state.on_window_event(&graphics.window, event);
+
+        if response.repaint {
+            graphics.window.request_redraw();
+        }
+
+        response.consumed
+    }
+
+    #[cfg(feature = "egui")]
+    pub(crate) fn egui_wants_pointer_input(&self) -> bool {
+        self.graphics
+            .egui
+            .state
+            .egui_ctx()
+            .egui_wants_pointer_input()
     }
 
     pub(crate) fn handle_mouse_move(&mut self, position: PhysicalPosition<f64>) {

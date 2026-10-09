@@ -1,5 +1,7 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
+#[cfg(feature = "egui")]
+use winit::event::WindowEvent;
 use winit::{dpi::PhysicalPosition, event::MouseScrollDelta, window::Window};
 
 use crate::{
@@ -82,6 +84,16 @@ impl Client {
 
     pub(crate) fn request_redraw(&self) {
         self.window().request_redraw();
+    }
+
+    #[cfg(feature = "egui")]
+    pub(crate) fn handle_window_event(&mut self, event: &WindowEvent) -> bool {
+        self.engine.handle_window_event(event)
+    }
+
+    #[cfg(feature = "egui")]
+    pub(crate) fn egui_wants_pointer_input(&self) -> bool {
+        self.engine.egui_wants_pointer_input()
     }
 
     pub(crate) fn render(&mut self) {

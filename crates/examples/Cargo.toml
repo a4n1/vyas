@@ -10,5 +10,6 @@ name = "vyas"
 path = "src/main.rs"
 
 [dependencies]
-vyas = { path = "../vyas" }
+vyas = { path = "../vyas", features = ["egui"] }
 glam.workspace = true
+egui.workspace = true

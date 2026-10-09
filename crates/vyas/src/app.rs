@@ -30,6 +30,8 @@ pub struct App {
     config: Option<AppConfig>,
     capture_cursor: bool,
     cursor_captured: bool,
+    focused: bool,
+    occluded: bool,
 }
 
 #[derive(Default)]
@@ -38,6 +40,8 @@ pub(crate) struct AppConfig {
     pub(crate) render_config: RenderConfigState,
     pub(crate) systems: Vec<(Schedule, Box<dyn System>)>,
     pub(crate) resources: Vec<Box<dyn FnOnce(&mut World)>>,
+    #[cfg(feature = "egui")]
+    pub(crate) egui: Option<Box<dyn FnMut(&::egui::Context)>>,
 }
 
 impl Default for App {
@@ -49,6 +53,8 @@ impl Default for App {
             config: Some(AppConfig::default()),
             capture_cursor: false,
             cursor_captured: false,
+            focused: true,
+            occluded: false,
         }
     }
 }
@@ -80,6 +86,13 @@ impl App {
     pub fn set_render_config(mut self, render_config: RenderConfigState) -> Self {
         let config = self.config.as_mut().expect("app config already taken");
         config.render_config = render_config;
+        self
+    }
+
+    #[cfg(feature = "egui")]
+    pub fn set_egui(mut self, egui: impl FnMut(&::egui::Context) + 'static) -> Self {
+        let config = self.config.as_mut().expect("app config already taken");
+        config.egui = Some(Box::new(egui));
         self
     }
 
@@ -205,7 +218,25 @@ impl ApplicationHandler<Client> for App {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        if self.capture_cursor {
+        match &event {
+            WindowEvent::Focused(focused) => self.focused = *focused,
+            WindowEvent::Occluded(occluded) => self.occluded = *occluded,
+            _ => {}
+        }
+        let render_active = self.focused && !self.occluded;
+
+        #[cfg(feature = "egui")]
+        let mut is_egui_event = false;
+
+        #[cfg(not(feature = "egui"))]
+        let is_egui_event = false;
+
+        #[cfg(feature = "egui")]
+        self.client.with_mut(|client| {
+            is_egui_event = client.handle_window_event(&event);
+        });
+
+        if self.capture_cursor && !is_egui_event {
             match &event {
                 WindowEvent::KeyboardInput {
                     event:
@@ -228,37 +259,61 @@ impl ApplicationHandler<Client> for App {
 
         self.client.apply_commands();
 
-        self.client.with_mut(|client| match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => {
-                client.resize(size);
-                client.request_redraw();
+        self.client.with_mut(|client| {
+            match event {
+                WindowEvent::CloseRequested => event_loop.exit(),
+                WindowEvent::Resized(size) => {
+                    client.resize(size);
+                    if render_active {
+                        client.request_redraw();
+                    }
+                }
+                WindowEvent::Focused(true) | WindowEvent::Occluded(false) => {
+                    if render_active {
+                        client.request_redraw();
+                    }
+                }
+                WindowEvent::RedrawRequested => {
+                    if render_active {
+                        client.render();
+                    }
+                }
+                _ => {}
             }
-            WindowEvent::Focused(true) | WindowEvent::Occluded(false) => client.request_redraw(),
-            WindowEvent::RedrawRequested => {
-                client.render();
-            }
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(code),
-                        state,
+
+            if !is_egui_event {
+                match event {
+                    WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                physical_key: PhysicalKey::Code(code),
+                                state,
+                                ..
+                            },
                         ..
-                    },
-                ..
-            } => {
-                client.handle_button_press(code.into(), state.is_pressed());
+                    } => {
+                        client
+                            .handle_button_press(code.into(), state.is_pressed() && !is_egui_event);
+                    }
+                    WindowEvent::MouseInput { button, state, .. } => {
+                        client.handle_button_press(
+                            button.into(),
+                            state.is_pressed() && !is_egui_event,
+                        );
+                    }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        if !is_egui_event {
+                            client.handle_mouse_move(position);
+                        }
+                    }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        if !is_egui_event {
+                            client.handle_mouse_scroll(delta);
+                        }
+                    }
+                    _ => {}
+                }
             }
-            WindowEvent::MouseInput { button, state, .. } => {
-                client.handle_button_press(button.into(), state.is_pressed());
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                client.handle_mouse_move(position);
-            }
-            WindowEvent::MouseWheel { delta, .. } => {
-                client.handle_mouse_scroll(delta);
-            }
-            _ => {}
         });
     }
 
@@ -271,6 +326,13 @@ impl ApplicationHandler<Client> for App {
         if self.cursor_captured
             && let DeviceEvent::MouseMotion { delta } = event
         {
+            #[cfg(feature = "egui")]
+            self.client.with_mut(|client| {
+                if !client.egui_wants_pointer_input() {
+                    client.handle_mouse_motion(delta);
+                }
+            });
+            #[cfg(not(feature = "egui"))]
             self.client
                 .with_mut(|client| client.handle_mouse_motion(delta));
         }

@@ -1,11 +1,13 @@
-use std::{
-    iter,
-    sync::{Arc, mpsc},
-};
+use std::sync::{Arc, mpsc};
+
+#[cfg(not(feature = "egui"))]
+use std::iter;
 
 use wgpu::PresentMode;
 use winit::{dpi::PhysicalSize, window::Window};
 
+#[cfg(feature = "egui")]
+use crate::egui::Egui;
 use crate::{
     brickgrid::{Feedback, FeedbackGpu},
     buffer::BrickmapBuffer,
@@ -25,6 +27,8 @@ pub(crate) struct Graphics {
     pub(crate) viewport_size: PhysicalSize<u32>,
     pub(crate) max_texture_dimension_2d: u32,
     pub(crate) supports_srgb_surface_view: bool,
+    #[cfg(feature = "egui")]
+    pub(crate) egui: Egui,
     surface: wgpu::Surface<'static>,
     queue: wgpu::Queue,
     state: State,
@@ -37,7 +41,11 @@ struct State {
 }
 
 impl Graphics {
-    pub(crate) async fn new(window: Arc<Window>, render_config: &RenderConfigState) -> Self {
+    pub(crate) async fn new(
+        window: Arc<Window>,
+        render_config: &RenderConfigState,
+        #[cfg(feature = "egui")] egui: Option<Box<dyn FnMut(&::egui::Context)>>,
+    ) -> Self {
         let size = window.inner_size();
 
         let instance_descriptor = wgpu::InstanceDescriptor {
@@ -115,6 +123,21 @@ impl Graphics {
             },
         };
 
+        #[cfg(feature = "egui")]
+        let egui_format = if supports_srgb_surface_view {
+            surface_config.format.add_srgb_suffix()
+        } else {
+            surface_config.format
+        };
+        #[cfg(feature = "egui")]
+        let egui = Egui::new(
+            &window,
+            &device,
+            egui_format,
+            max_texture_dimension_2d,
+            egui,
+        );
+
         Self {
             window,
             device,
@@ -122,6 +145,8 @@ impl Graphics {
             viewport_size: size,
             max_texture_dimension_2d,
             supports_srgb_surface_view,
+            #[cfg(feature = "egui")]
+            egui,
             surface,
             queue,
             state: State {
@@ -367,6 +392,17 @@ impl Graphics {
 
         drop(render_pass);
 
+        #[cfg(feature = "egui")]
+        self.egui.render(
+            &self.window,
+            &self.device,
+            &self.queue,
+            encoder,
+            &view,
+            [self.surface_config.width, self.surface_config.height],
+        );
+
+        #[cfg(not(feature = "egui"))]
         self.queue.submit(iter::once(encoder.finish()));
 
         if read_feedback {

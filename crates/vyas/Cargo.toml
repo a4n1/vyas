@@ -10,8 +10,14 @@ repository = "https://github.com/a4n1/vyas"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+egui = ["dep:egui", "dep:egui-winit", "dep:egui-wgpu"]
+
 [dependencies]
 bytemuck.workspace = true
+egui = { workspace = true, optional = true }
+egui-winit = { workspace = true, optional = true }
+egui-wgpu = { workspace = true, optional = true }
 env_logger.workspace = true
 glam.workspace = true
 log.workspace = true

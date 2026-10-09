@@ -31,6 +31,11 @@ fn main() {
         .set_camera(camera)
         .set_cursor_capture(true)
         .set_render_config(render_config)
+        .set_egui(|ctx| {
+            egui::Window::new("Controls").show(ctx, |ui| {
+                ui.label("Hello from egui");
+            });
+        })
         .insert_resource(controller)
         .add_systems(Startup, load_scene)
         .add_systems(Startup, setup_lights)
