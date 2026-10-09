@@ -36,4 +36,18 @@ pub(crate) fn draw(ctx: &egui::Context, world: &World) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
         });
+
+    egui::Area::new(egui::Id::new("model_credit"))
+        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-12.0, -12.0))
+        .order(egui::Order::Foreground)
+        .interactable(false)
+        .show(ctx, |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "San Miguel © Guillermo M. Leal Llaguno · Voxelized with Voxquant",
+                )
+                .size(11.0)
+                .color(egui::Color32::LIGHT_GRAY),
+            );
+        });
 }
