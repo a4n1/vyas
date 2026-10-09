@@ -8,12 +8,14 @@ use winit::{
     window::{CursorGrabMode, Window},
 };
 
+#[cfg(target_os = "macos")]
+use objc2_app_kit::NSCursor;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-#[cfg(target_arch = "wasm32")]
-use winit::platform::web::EventLoopExtWebSys;
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowAttributesExtMacOS;
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::EventLoopExtWebSys;
 
 use crate::{
     camera::CameraConfig,
@@ -140,10 +142,20 @@ impl App {
 
                 window.set_cursor_visible(!captured);
                 self.cursor_captured = captured;
+
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    NSCursor::hide()
+                };
             } else {
                 let _ = window.set_cursor_grab(CursorGrabMode::None);
                 window.set_cursor_visible(true);
                 self.cursor_captured = false;
+
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    NSCursor::unhide()
+                };
             };
         });
     }
@@ -368,5 +380,12 @@ impl ApplicationHandler<Client> for App {
             self.client
                 .with_mut(|client| client.handle_mouse_motion(delta));
         }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for App {
+    fn drop(&mut self) {
+        unsafe { NSCursor::unhide() };
     }
 }
