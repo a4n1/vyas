@@ -12,6 +12,8 @@ use winit::{
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::EventLoopExtWebSys;
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowAttributesExtMacOS;
 
 use crate::{
     camera::CameraConfig,
@@ -183,6 +185,14 @@ impl ApplicationHandler<Client> for App {
 
         if let Some(name) = &self.name {
             window_attributes = window_attributes.with_title(name.as_str());
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            window_attributes = window_attributes
+                .with_title_hidden(true)
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true);
         }
 
         #[cfg(target_arch = "wasm32")]
