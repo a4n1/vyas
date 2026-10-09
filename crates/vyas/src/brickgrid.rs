@@ -1,14 +1,18 @@
 use std::collections::HashSet;
 
+use crate::brickmap::FallbackBrickmapGpu;
+
 #[derive(Debug, Clone)]
 pub(crate) struct Brickgrid {
     pub(crate) data: Vec<BrickgridCell>,
+    pub(crate) fallback_data: Vec<FallbackBrickmapGpu>,
 }
 
 impl Brickgrid {
     pub(crate) fn new(size: u32) -> Self {
         Brickgrid {
             data: vec![BrickgridCellData::Empty.into(); size.pow(3) as usize],
+            fallback_data: vec![FallbackBrickmapGpu::default(); size.pow(3) as usize],
         }
     }
 

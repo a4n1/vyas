@@ -10,6 +10,7 @@ struct RenderConfig {
     brickmap_size: u32,
     brickgrid_size: u32,
     crt: u32,
+    fallback_brickmap_size: u32,
     fill_color: vec3f,
 };
 
@@ -38,7 +39,16 @@ struct Brickmap {
 @group(0) @binding(5)
 var<storage, read> brickmaps: array<Brickmap>;
 
+struct FallbackBrickmap {
+    solid_mask: u32,
+    colors: array<u32, 2>,
+    padding: u32,
+};
+
 @group(0) @binding(6)
+var<storage, read> fallback_brickmaps: array<FallbackBrickmap>;
+
+@group(0) @binding(7)
 var<storage, read> colors: array<u32>;
 
 struct Lights {
@@ -47,22 +57,22 @@ struct Lights {
     direction: vec4f,
 };
 
-@group(0) @binding(7)
+@group(0) @binding(8)
 var<uniform> lights: Lights;
 
-@group(0) @binding(8)
+@group(0) @binding(9)
 var base_color_texture: texture_storage_2d<rgba16float, write>;
 
-@group(0) @binding(9)
+@group(0) @binding(10)
 var base_color_sampled: texture_2d<f32>;
 
-@group(0) @binding(10)
+@group(0) @binding(11)
 var surface_data_texture: texture_storage_2d<rgba8uint, write>;
 
-@group(0) @binding(11)
+@group(0) @binding(12)
 var surface_data_sampled: texture_2d<u32>;
 
-@group(0) @binding(12)
+@group(0) @binding(13)
 var base_color_sampler: sampler;
 
 @compute @workgroup_size(8, 8) 
@@ -127,15 +137,16 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
             let isLoaded = brickgridCell != 0u && (brickgridCell & unloadedBit) == 0u;
             let isUnloaded = (brickgridCell & unloadedBit) != 0u;
 
+            let localRayOrigin = clamp(
+                rayOrigin
+                    + rayDirection * rayEntryDistance
+                    - vec3f(stepPosition) * brickmapSize,
+                vec3f(0.0),
+                vec3f(brickmapSize - 0.000001),
+            );
+
             if isLoaded {
                 let brickmap = brickmaps[brickgridCell - 1u];
-                let localRayOrigin = clamp(
-                    rayOrigin
-                        + rayDirection * rayEntryDistance
-                        - vec3f(stepPosition) * brickmapSize,
-                    vec3f(0.0),
-                    vec3f(brickmapSize - 0.000001),
-                );
 
                 if raytraceBrickmap(
                     position,
@@ -158,7 +169,16 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
                     }
                 }
 
-                return;
+                if raytraceFallbackBrickmap(
+                    position,
+                    localRayOrigin,
+                    traversalDirection,
+                    fallback_brickmaps[index],
+                    entryFaceId,
+                    rayEntryDistance,
+                ) {
+                    return;
+                }
             }
         }
 
@@ -226,18 +246,8 @@ fn raytraceBrickmap(
             let paletteIndex = (packedColorIndices >> ((colorByteIndex % 4u) * 8u)) & 0xffu;
             let color = color_palette[paletteIndex];
 
-            let normal = normalFromFaceId(faceId);
             let hitPosition = camera.position.xyz + rayDirection * (rayEntryDistance + voxelEntryDistance);
-
-            var visibility = 1u;
-            if faceId != 0u {
-                if raytraceShadow(hitPosition, normal) {
-                    visibility = 0u;
-                }
-            }
-
-            textureStore(base_color_texture, position, vec4f(unpackColor(color), 1.0));
-            textureStore(surface_data_texture, position, vec4u(faceId, visibility, 0u, 0u));
+            writeSurfaceHit(position, color, faceId, hitPosition);
 
             return true;
         }
@@ -251,6 +261,68 @@ fn raytraceBrickmap(
     }
 
     return false;
+}
+
+fn raytraceFallbackBrickmap(
+    position: vec2u,
+    localRayOrigin: vec3f,
+    rayDirection: vec3f,
+    brickmap: FallbackBrickmap,
+    entryFaceId: u32,
+    rayEntryDistance: f32,
+) -> bool {
+    let fallbackBrickmapSize = i32(config.fallback_brickmap_size);
+
+    let voxelSize = f32(config.brickmap_size) / f32(fallbackBrickmapSize);
+    let origin = localRayOrigin / voxelSize;
+    var mapPos = vec3i(floor(origin));
+
+    let deltaDist = voxelSize / abs(rayDirection);
+    let rayStep = vec3i(sign(rayDirection));
+
+    var sideDist = (
+        vec3f(rayStep) * (vec3f(mapPos) - origin)
+        + 0.5 * vec3f(rayStep)
+        + 0.5
+    ) * deltaDist;
+    var faceId = entryFaceId;
+    var distance = 0.0;
+
+    for (var i = 0; i < fallbackBrickmapSize * 3; i++) {
+        if any(mapPos < vec3i(0)) || any(mapPos >= vec3i(fallbackBrickmapSize)) {
+            break;
+        }
+
+        let voxelIndex = getIndex(mapPos, fallbackBrickmapSize);
+        if (brickmap.solid_mask & (1u << voxelIndex)) != 0u {
+            let packedColors = brickmap.colors[voxelIndex / 4u];
+            let paletteIndex = (packedColors >> ((voxelIndex % 4u) * 8u)) & 0xffu;
+            let hitPosition = camera.position.xyz + rayDirection * (rayEntryDistance + distance);
+            writeSurfaceHit(position, color_palette[paletteIndex], faceId, hitPosition);
+            return true;
+        }
+
+        distance = min(min(sideDist.x, sideDist.y), sideDist.z);
+        let mask = sideDist <= min(sideDist.yzx, sideDist.zxy);
+        faceId = faceIdFromNormal(-vec3i(mask) * rayStep);
+        sideDist += vec3f(mask) * deltaDist;
+        mapPos += vec3i(mask) * rayStep;
+    }
+
+    return false;
+}
+
+
+fn writeSurfaceHit(position: vec2u, color: u32, faceId: u32, hitPosition: vec3f) {
+    var visibility = 1u;
+    if faceId != 0u {
+        if raytraceShadow(hitPosition, normalFromFaceId(faceId)) {
+            visibility = 0u;
+        }
+    }
+
+    textureStore(base_color_texture, position, vec4f(unpackColor(color), 1.0));
+    textureStore(surface_data_texture, position, vec4u(faceId, visibility, 0u, 0u));
 }
 
 fn raytraceShadow(hitPosition: vec3f, normal: vec3f) -> bool {
@@ -305,15 +377,16 @@ fn raytraceShadow(hitPosition: vec3f, normal: vec3f) -> bool {
             const unloadedBit = 1u << 24u;
             const requestedBit = 1u << 25u;
 
+            let localRayOrigin = clamp(
+                rayOrigin
+                    + rayDirection * rayEntryDistance
+                    - vec3f(stepPosition) * brickmapSize,
+                vec3f(0.0),
+                vec3f(brickmapSize - 0.000001),
+            );
+
             if (brickgridCell & unloadedBit) == 0u {
                 let brickmap = brickmaps[brickgridCell - 1u];
-                let localRayOrigin = clamp(
-                    rayOrigin
-                        + rayDirection * rayEntryDistance
-                        - vec3f(stepPosition) * brickmapSize,
-                    vec3f(0.0),
-                    vec3f(brickmapSize - 0.000001),
-                );
 
                 if raytraceShadowBrickmap(localRayOrigin, traversalDirection, brickmap) {
                     return true;
@@ -329,7 +402,13 @@ fn raytraceShadow(hitPosition: vec3f, normal: vec3f) -> bool {
                     }
                 }
 
-                return true;
+                if raytraceShadowFallbackBrickmap(
+                    localRayOrigin,
+                    traversalDirection,
+                    fallback_brickmaps[index],
+                ) {
+                    return true;
+                }
             }
         }
 
@@ -382,6 +461,41 @@ fn raytraceShadowBrickmap(
 
         let mask = sideDist <= min(sideDist.yzx, sideDist.zxy);
 
+        sideDist += vec3f(mask) * deltaDist;
+        mapPos += vec3i(mask) * rayStep;
+    }
+
+    return false;
+}
+
+fn raytraceShadowFallbackBrickmap(
+    localRayOrigin: vec3f,
+    rayDirection: vec3f,
+    brickmap: FallbackBrickmap,
+) -> bool {
+    let fallbackBrickmapSize = i32(config.fallback_brickmap_size);
+    let voxelSize = f32(config.brickmap_size) / f32(fallbackBrickmapSize);
+    let origin = localRayOrigin / voxelSize;
+    var mapPos = vec3i(floor(origin));
+    let rayStep = vec3i(sign(rayDirection));
+    let deltaDist = voxelSize / abs(rayDirection);
+    var sideDist = (
+        vec3f(rayStep) * (vec3f(mapPos) - origin)
+        + 0.5 * vec3f(rayStep)
+        + 0.5
+    ) * deltaDist;
+
+    for (var i = 0; i < fallbackBrickmapSize * 3; i++) {
+        if any(mapPos < vec3i(0)) || any(mapPos >= vec3i(fallbackBrickmapSize)) {
+            break;
+        }
+
+        let voxelIndex = getIndex(mapPos, fallbackBrickmapSize);
+        if (brickmap.solid_mask & (1u << voxelIndex)) != 0u {
+            return true;
+        }
+
+        let mask = sideDist <= min(sideDist.yzx, sideDist.zxy);
         sideDist += vec3f(mask) * deltaDist;
         mapPos += vec3i(mask) * rayStep;
     }

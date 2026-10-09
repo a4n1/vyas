@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     asset::Grid,
     brickgrid::{Brickgrid, BrickgridCell, BrickgridCellData},
-    brickmap::Brickmap,
+    brickmap::{Brickmap, FallbackBrickmapGpu},
     color::ColorPaletteState,
     config::RenderConfigState,
     ecs::{Bundle, Entity, World},
@@ -19,17 +19,26 @@ impl Bundle for Scene {
         let mut scene = world.resource_mut::<SceneState>();
         let render_config = *world.resource::<RenderConfigState>();
         let palette = world.resource::<ColorPaletteState>();
+        let mut brickmaps = HashSet::new();
 
         for block in self.grid {
             let brickmap_position = block.position.to_brickmap_position();
             let local_position = block.position.to_local_position();
+            brickmaps.insert(brickmap_position.clone());
 
             let brickmap = scene
                 .brickmaps
                 .entry(brickmap_position.clone())
                 .or_insert_with(|| Brickmap::new(brickmap_position));
 
-            brickmap.set_voxel(local_position, block.voxel, &palette);
+            brickmap.set_voxel(local_position, block.voxel);
+        }
+
+        for position in brickmaps {
+            if let Some(brickmap) = scene.brickmaps.get_mut(&position) {
+                brickmap.rebuild(&palette);
+                brickmap.rebuild_fallback(&palette);
+            }
         }
 
         let size = render_config.brickgrid_size;
@@ -37,7 +46,7 @@ impl Bundle for Scene {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct SceneState {
     brickgrid: Brickgrid,
     brickmaps: HashMap<GridPosition, Brickmap>,
@@ -55,6 +64,10 @@ impl SceneState {
 
     pub(crate) fn to_brickgrid_gpu(&self) -> &[BrickgridCell] {
         &self.brickgrid.data
+    }
+
+    pub(crate) fn to_fallback_brickmaps_gpu(&self) -> &[FallbackBrickmapGpu] {
+        &self.brickgrid.fallback_data
     }
 
     pub(crate) fn get_brickmap_by_index(&self, idx: u32) -> Option<&Brickmap> {
@@ -85,12 +98,13 @@ impl SceneState {
     }
 
     pub(crate) fn update(&mut self, camera_position: &GridPosition, brickgrid_size: u32) {
+        let diff = camera_position.clone() - self.camera_position.clone();
+        self.camera_position = camera_position.clone();
+
         if brickgrid_size as usize != self.brickgrid.size() {
             self.rebuild(brickgrid_size);
-            // return;
+            return;
         }
-
-        let diff = camera_position.clone() - self.camera_position.clone();
 
         if diff == GridPosition::default() {
             return;
@@ -105,16 +119,23 @@ impl SceneState {
 
         if shift_z != 0 {
             self.brickgrid.data.rotate_right(shift_z * plane);
+            self.brickgrid.fallback_data.rotate_right(shift_z * plane);
         }
 
         if shift_y != 0 {
             for slice in self.brickgrid.data.chunks_exact_mut(plane) {
                 slice.rotate_right(shift_y * size);
             }
+            for slice in self.brickgrid.fallback_data.chunks_exact_mut(plane) {
+                slice.rotate_right(shift_y * size);
+            }
         }
 
         if shift_x != 0 {
             for row in self.brickgrid.data.chunks_exact_mut(size) {
+                row.rotate_left(shift_x);
+            }
+            for row in self.brickgrid.fallback_data.chunks_exact_mut(size) {
                 row.rotate_left(shift_x);
             }
         }
@@ -177,45 +198,33 @@ impl SceneState {
             z: camera_position.z + range - z as i32,
         };
 
-        let cell = match self.brickmaps.get(&position) {
+        let brickmap = self.brickmaps.get(&position);
+
+        let cell = match brickmap {
             Some(brickmap) if !brickmap.is_empty() => BrickgridCellData::Unloaded,
             _ => BrickgridCellData::Empty,
         };
 
+        let fallback = match brickmap {
+            Some(brickmap) => brickmap.fallback_gpu,
+            None => FallbackBrickmapGpu::default(),
+        };
+
         let idx = x + y * size + z * size.pow(2);
         self.brickgrid.data[idx] = cell.into();
+        self.brickgrid.fallback_data[idx] = fallback;
     }
 
     pub(crate) fn rebuild(&mut self, brickgrid_size: u32) {
         self.brickgrid = Brickgrid::new(brickgrid_size);
 
-        let size = brickgrid_size as i32;
+        let size = brickgrid_size as usize;
         let camera_pos = self.camera_position.clone();
 
         for x in 0..size {
             for y in 0..size {
                 for z in 0..size {
-                    let range = (size - 1) / 2;
-                    let pos_x = x + camera_pos.x - range;
-                    let pos_y = camera_pos.y + range - y;
-                    let pos_z = camera_pos.z + range - z;
-
-                    let position = GridPosition {
-                        x: pos_x,
-                        y: pos_y,
-                        z: pos_z,
-                    };
-
-                    let cell = match self.brickmaps.get(&position) {
-                        Some(brickmap) if !brickmap.is_empty() => BrickgridCellData::Unloaded,
-                        Some(_) => BrickgridCellData::Empty,
-                        None => {
-                            continue;
-                        }
-                    };
-
-                    let idx = GridPosition { x, y, z }.to_index(size);
-                    self.update_brickgrid(idx as u32, cell.into());
+                    self.refresh_brickgrid_cell(x, y, z, &camera_pos);
                 }
             }
         }

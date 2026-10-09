@@ -29,6 +29,7 @@ pub struct Pipeline {
     pub(crate) render_pipeline: wgpu::RenderPipeline,
     pub(crate) brickgrid_buffer: wgpu::Buffer,
     pub(crate) brickmap_buffer: wgpu::Buffer,
+    pub(crate) fallback_brickmap_buffer: wgpu::Buffer,
     pub(crate) color_buffer: wgpu::Buffer,
     pub(crate) feedback_buffer: wgpu::Buffer,
     pub(crate) feedback_result_buffer: wgpu::Buffer,
@@ -102,6 +103,13 @@ impl Pipeline {
 
         let brickmap_buffer = graphics.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("brickmap-buffer"),
+            size: Limits::default().max_storage_buffer_binding_size,
+            mapped_at_creation: false,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let fallback_brickmap_buffer = graphics.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("fallback-brickmap-buffer"),
             size: Limits::default().max_storage_buffer_binding_size,
             mapped_at_creation: false,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
@@ -216,7 +224,7 @@ impl Pipeline {
                             binding: 7,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
                                 has_dynamic_offset: false,
                                 min_binding_size: None,
                             },
@@ -224,6 +232,16 @@ impl Pipeline {
                         },
                         wgpu::BindGroupLayoutEntry {
                             binding: 8,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 9,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::StorageTexture {
                                 access: wgpu::StorageTextureAccess::WriteOnly,
@@ -233,7 +251,7 @@ impl Pipeline {
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
-                            binding: 10,
+                            binding: 11,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::StorageTexture {
                                 access: wgpu::StorageTextureAccess::WriteOnly,
@@ -277,18 +295,22 @@ impl Pipeline {
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
-                        resource: color_buffer.as_entire_binding(),
+                        resource: fallback_brickmap_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: lights_buffer.as_entire_binding(),
+                        resource: color_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 8,
+                        resource: lights_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
                         resource: wgpu::BindingResource::TextureView(&base_color_view),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 10,
+                        binding: 11,
                         resource: wgpu::BindingResource::TextureView(&surface_data_view),
                     },
                 ],
@@ -332,7 +354,7 @@ impl Pipeline {
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
-                            binding: 7,
+                            binding: 8,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Uniform,
@@ -342,7 +364,7 @@ impl Pipeline {
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
-                            binding: 9,
+                            binding: 10,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -352,7 +374,7 @@ impl Pipeline {
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
-                            binding: 11,
+                            binding: 12,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 sample_type: wgpu::TextureSampleType::Uint,
@@ -362,7 +384,7 @@ impl Pipeline {
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
-                            binding: 12,
+                            binding: 13,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
@@ -381,19 +403,19 @@ impl Pipeline {
                         resource: render_config_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 7,
+                        binding: 8,
                         resource: lights_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 9,
+                        binding: 10,
                         resource: wgpu::BindingResource::TextureView(&base_color_view),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 11,
+                        binding: 12,
                         resource: wgpu::BindingResource::TextureView(&surface_data_view),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 12,
+                        binding: 13,
                         resource: wgpu::BindingResource::Sampler(&base_color_sampler),
                     },
                 ],
@@ -467,6 +489,7 @@ impl Pipeline {
             render_pipeline,
             brickgrid_buffer,
             brickmap_buffer,
+            fallback_brickmap_buffer,
             color_buffer,
             feedback_buffer,
             feedback_result_buffer,
@@ -529,19 +552,19 @@ impl Pipeline {
                         resource: self.render_config_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 7,
+                        binding: 8,
                         resource: self.lights_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 9,
+                        binding: 10,
                         resource: wgpu::BindingResource::TextureView(&base_color_view),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 11,
+                        binding: 12,
                         resource: wgpu::BindingResource::TextureView(&surface_data_view),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 12,
+                        binding: 13,
                         resource: wgpu::BindingResource::Sampler(&self.base_color_sampler),
                     },
                 ],
@@ -589,18 +612,22 @@ impl Pipeline {
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
-                        resource: self.color_buffer.as_entire_binding(),
+                        resource: self.fallback_brickmap_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: self.lights_buffer.as_entire_binding(),
+                        resource: self.color_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 8,
+                        resource: self.lights_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
                         resource: wgpu::BindingResource::TextureView(base_color_view),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 10,
+                        binding: 11,
                         resource: wgpu::BindingResource::TextureView(surface_data_view),
                     },
                 ],

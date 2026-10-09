@@ -4,6 +4,7 @@ use crate::{
 };
 
 pub(crate) const BRICKMAP_SIZE: u32 = 8;
+pub(crate) const FALLBACK_BRICKMAP_SIZE: u32 = 2;
 
 pub type RenderConfig<'a> = ResMut<'a, RenderConfigState>;
 
@@ -52,7 +53,7 @@ impl RenderConfigState {
             brickmap_size: self.brickmap_size,
             brickgrid_size: self.brickgrid_size,
             crt: u32::from(self.crt),
-            _padding0: 0,
+            fallback_brickmap_size: FALLBACK_BRICKMAP_SIZE,
             fill_color: self.fill_color.into(),
             _padding1: 0,
         }
@@ -65,7 +66,7 @@ pub struct RenderConfigGpu {
     brickmap_size: u32,
     brickgrid_size: u32,
     crt: u32,
-    _padding0: u32,
+    fallback_brickmap_size: u32,
     fill_color: [f32; 3],
     _padding1: u32,
 }

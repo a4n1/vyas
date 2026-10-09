@@ -197,12 +197,6 @@ impl Graphics {
         );
 
         self.queue.write_buffer(
-            &pipeline.brickgrid_buffer,
-            0,
-            bytemuck::cast_slice(scene.to_brickgrid_gpu()),
-        );
-
-        self.queue.write_buffer(
             &pipeline.camera_buffer,
             0,
             bytemuck::cast_slice(&[pipeline.camera]),
@@ -215,9 +209,15 @@ impl Graphics {
         );
 
         self.queue.write_buffer(
-            &pipeline.lights_buffer,
+            &pipeline.brickgrid_buffer,
             0,
-            bytemuck::bytes_of(&lights),
+            bytemuck::cast_slice(scene.to_brickgrid_gpu()),
+        );
+
+        self.queue.write_buffer(
+            &pipeline.fallback_brickmap_buffer,
+            0,
+            bytemuck::cast_slice(scene.to_fallback_brickmaps_gpu()),
         );
 
         self.queue.write_buffer(
@@ -225,6 +225,9 @@ impl Graphics {
             0,
             bytemuck::cast_slice(&color_palette.to_gpu()),
         );
+
+        self.queue
+            .write_buffer(&pipeline.lights_buffer, 0, bytemuck::bytes_of(&lights));
     }
 
     fn read_feedback(&mut self, buffer: &wgpu::Buffer) -> Feedback {
