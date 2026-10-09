@@ -20,6 +20,9 @@ use crate::{
     ecs::{IntoSystem, Resource, Schedule, System, World},
 };
 
+#[cfg(target_os = "macos")]
+mod macos_menu;
+
 #[cfg(target_arch = "wasm32")]
 const CANVAS_ID: &str = "vyas";
 
@@ -160,6 +163,9 @@ impl App {
 
 impl ApplicationHandler<Client> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        #[cfg(target_os = "macos")]
+        macos_menu::install_menu();
+
         #[allow(unused_mut)]
         let mut window_attributes = Window::default_attributes();
 
