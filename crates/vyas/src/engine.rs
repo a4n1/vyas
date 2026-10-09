@@ -13,7 +13,7 @@ use crate::{
     camera::CameraState,
     color::ColorPaletteState,
     ecs::{CommandQueue, Res, ResMut, Resource, Schedule, System, World},
-    fps::FpsCounter,
+    fps::Fps,
     graphics::Graphics,
     input::{InputButton, InputState},
     pipeline::Pipeline,
@@ -24,7 +24,6 @@ pub(crate) struct Engine {
     pub(crate) graphics: Graphics,
     world: World,
     pipeline: Pipeline,
-    fps_counter: FpsCounter,
     systems: Vec<(Schedule, Box<dyn System>)>,
     started: bool,
 }
@@ -51,6 +50,7 @@ impl Engine {
             camera_pos.to_brickmap_position(),
         ));
         world.insert_resource(ColorPaletteState::new());
+        world.insert_resource(Fps::new());
 
         for insert_resource in resources {
             insert_resource(&mut world);
@@ -61,13 +61,11 @@ impl Engine {
         #[cfg(not(feature = "egui"))]
         let graphics = Graphics::new(window, &render_config).await;
         let pipeline = Pipeline::new(&graphics, &world);
-        let fps_counter = FpsCounter::new();
 
         Self {
             graphics,
             world,
             pipeline,
-            fps_counter,
             systems,
             started: false,
         }
@@ -104,8 +102,8 @@ impl Engine {
     }
 
     pub(crate) fn render(&mut self) {
-        self.graphics.render(&self.pipeline);
-        self.fps_counter.tick();
+        self.graphics.render(&self.pipeline, &self.world);
+        self.world.resource_mut::<Fps>().tick();
     }
 
     pub(crate) fn resize(&mut self, size: PhysicalSize<u32>) {

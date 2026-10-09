@@ -1,7 +1,12 @@
+use vyas::prelude::*;
+
 pub(crate) const APP_NAME: &str = "Vyas";
 
-pub(crate) fn draw(ctx: &egui::Context) {
+pub(crate) fn draw(ctx: &egui::Context, world: &World) {
+    let fps = world.resource::<Fps>().value();
+
     let screen = ctx.content_rect();
+
     egui::Area::new(egui::Id::new("titlebar"))
         .fixed_pos(screen.min)
         .order(egui::Order::Foreground)
@@ -14,11 +19,11 @@ pub(crate) fn draw(ctx: &egui::Context) {
             let title_rect = egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.min.y), rect.max);
 
             ui.painter().with_clip_rect(title_rect).text(
-                title_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                APP_NAME,
-                egui::FontId::monospace(13.0),
-                egui::Color32::WHITE,
+                egui::pos2(title_rect.max.x - 12.0, title_rect.center().y),
+                egui::Align2::RIGHT_CENTER,
+                format!("FPS {fps:.1}"),
+                egui::FontId::monospace(11.0),
+                egui::Color32::GRAY,
             );
 
             let response = ui.interact(

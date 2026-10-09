@@ -1,12 +1,12 @@
 use web_time::{Duration, Instant};
 
-pub(crate) struct FpsCounter {
+pub struct Fps {
     last_update: Instant,
     frame_count: u32,
     fps: f32,
 }
 
-impl FpsCounter {
+impl Fps {
     pub(crate) fn new() -> Self {
         Self {
             last_update: Instant::now(),
@@ -28,5 +28,9 @@ impl FpsCounter {
             self.frame_count = 0;
             self.last_update = Instant::now();
         }
+    }
+
+    pub fn value(&self) -> f32 {
+        self.fps
     }
 }

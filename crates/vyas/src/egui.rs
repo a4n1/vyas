@@ -3,10 +3,12 @@ use egui_wgpu::{Renderer, ScreenDescriptor};
 use egui_winit::State;
 use winit::window::Window;
 
+use crate::ecs::World;
+
 pub(crate) struct Egui {
     pub(crate) state: State,
     pub(crate) renderer: Renderer,
-    pub(crate) ui: Option<Box<dyn FnMut(&::egui::Context)>>,
+    pub(crate) ui: Option<Box<dyn FnMut(&::egui::Context, &World)>>,
 }
 
 impl Egui {
@@ -15,7 +17,7 @@ impl Egui {
         device: &wgpu::Device,
         surface_format: wgpu::TextureFormat,
         max_texture_side: u32,
-        ui: Option<Box<dyn FnMut(&Context)>>,
+        ui: Option<Box<dyn FnMut(&Context, &World)>>,
     ) -> Self {
         let context = Context::default();
         let state = State::new(
@@ -43,12 +45,13 @@ impl Egui {
         mut encoder: wgpu::CommandEncoder,
         view: &wgpu::TextureView,
         size: [u32; 2],
+        world: &World,
     ) {
         let raw_input = self.state.take_egui_input(window);
         let context = self.state.egui_ctx().clone();
         let full_output = context.run_ui(raw_input, |root_ui| {
             if let Some(ui) = &mut self.ui {
-                ui(root_ui.ctx());
+                ui(root_ui.ctx(), world);
             }
         });
 

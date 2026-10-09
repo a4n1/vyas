@@ -30,6 +30,7 @@ pub mod prelude {
     pub use crate::config::*;
     pub use crate::dda::*;
     pub use crate::ecs::*;
+    pub use crate::fps::*;
     pub use crate::input::*;
     pub use crate::light::*;
     pub use crate::position::*;

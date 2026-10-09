@@ -47,7 +47,7 @@ pub(crate) struct AppConfig {
     pub(crate) systems: Vec<(Schedule, Box<dyn System>)>,
     pub(crate) resources: Vec<Box<dyn FnOnce(&mut World)>>,
     #[cfg(feature = "egui")]
-    pub(crate) egui: Option<Box<dyn FnMut(&::egui::Context)>>,
+    pub(crate) egui: Option<Box<dyn FnMut(&::egui::Context, &World)>>,
 }
 
 impl Default for App {
@@ -102,7 +102,7 @@ impl App {
     }
 
     #[cfg(feature = "egui")]
-    pub fn set_egui(mut self, egui: impl FnMut(&::egui::Context) + 'static) -> Self {
+    pub fn set_egui(mut self, egui: impl FnMut(&::egui::Context, &World) + 'static) -> Self {
         let config = self.config.as_mut().expect("app config already taken");
         config.egui = Some(Box::new(egui));
         self

@@ -44,7 +44,7 @@ impl Graphics {
     pub(crate) async fn new(
         window: Arc<Window>,
         render_config: &RenderConfigState,
-        #[cfg(feature = "egui")] egui: Option<Box<dyn FnMut(&::egui::Context)>>,
+        #[cfg(feature = "egui")] egui: Option<Box<dyn FnMut(&::egui::Context, &World)>>,
     ) -> Self {
         let size = window.inner_size();
 
@@ -290,7 +290,10 @@ impl Graphics {
         }
     }
 
-    pub(crate) fn render(&mut self, pipeline: &Pipeline) {
+    pub(crate) fn render(&mut self, pipeline: &Pipeline, world: &World) {
+        #[cfg(not(feature = "egui"))]
+        let _ = world;
+
         if self.surface_config.width == 0 || self.surface_config.height == 0 {
             return;
         }
@@ -400,6 +403,7 @@ impl Graphics {
             encoder,
             &view,
             [self.surface_config.width, self.surface_config.height],
+            world,
         );
 
         #[cfg(not(feature = "egui"))]
