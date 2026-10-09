@@ -1,5 +1,10 @@
 use objc2_app_kit::{NSApplication, NSMenu, NSMenuItem};
-use objc2_foundation::{MainThreadMarker, ns_string};
+use objc2_foundation::{MainThreadMarker, NSProcessInfo, NSString, ns_string};
+
+pub(super) fn set_app_name(name: &str) {
+    let name = NSString::from_str(name);
+    unsafe { NSProcessInfo::processInfo().setProcessName(&name) };
+}
 
 pub(super) fn install_menu() {
     let mtm = MainThreadMarker::new().unwrap();

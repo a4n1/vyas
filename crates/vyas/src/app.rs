@@ -31,6 +31,7 @@ pub struct App {
     proxy: Option<winit::event_loop::EventLoopProxy<Client>>,
     client: SharedClient,
     config: Option<AppConfig>,
+    name: Option<String>,
     capture_cursor: bool,
     cursor_captured: bool,
     focused: bool,
@@ -54,6 +55,7 @@ impl Default for App {
             proxy: None,
             client: SharedClient::new(),
             config: Some(AppConfig::default()),
+            name: None,
             capture_cursor: false,
             cursor_captured: false,
             focused: true,
@@ -65,6 +67,11 @@ impl Default for App {
 impl App {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 
     pub fn set_client(mut self, client: Option<SharedClient>) -> Self {
@@ -140,6 +147,11 @@ impl App {
     }
 
     pub fn run(mut self) {
+        #[cfg(target_os = "macos")]
+        if let Some(name) = &self.name {
+            macos_menu::set_app_name(name);
+        }
+
         #[cfg(not(target_arch = "wasm32"))]
         env_logger::init();
 
@@ -168,6 +180,10 @@ impl ApplicationHandler<Client> for App {
 
         #[allow(unused_mut)]
         let mut window_attributes = Window::default_attributes();
+
+        if let Some(name) = &self.name {
+            window_attributes = window_attributes.with_title(name.as_str());
+        }
 
         #[cfg(target_arch = "wasm32")]
         {

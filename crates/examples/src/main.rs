@@ -28,6 +28,7 @@ fn main() {
     let controller = NoClipCamera::new(&camera.position, &camera.looking_at);
 
     App::new()
+        .set_name("Vyas")
         .set_camera(camera)
         .set_cursor_capture(true)
         .set_render_config(render_config)
