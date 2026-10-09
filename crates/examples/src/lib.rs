@@ -1,6 +1,9 @@
 mod camera;
 mod ui;
 
+use std::{cell::RefCell, io::Read, rc::Rc};
+
+use flate2::read::GzDecoder;
 use vyas::prelude::*;
 
 use crate::camera::NoClipCamera;
@@ -34,17 +37,64 @@ pub fn run() {
         .set_render_config(render_config)
         .set_egui(ui::draw)
         .insert_resource(controller)
-        .add_systems(Startup, load_scene)
+        .insert_resource(SceneData::default())
+        .add_systems(Startup, set_scene)
         .add_systems(Startup, setup_lights)
+        .add_systems(Update, load_scene)
         .add_systems(Update, NoClipCamera::update)
         .run();
 }
 
-fn load_scene(mut commands: Commands, mut palette: ColorPalette) {
-    let bytes = include_bytes!("../assets/san-miguel.vox");
-    let grid = vox::load_with_palette(bytes, &mut palette).expect("failed to load vox model");
+#[derive(Default)]
+struct SceneData(Rc<RefCell<Option<VoxAsset>>>);
 
-    commands.spawn(Scene { grid });
+#[cfg(not(target_arch = "wasm32"))]
+fn set_scene(data: Res<SceneData>) {
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/san-miguel.vox.gz"
+    ))
+    .expect("failed to read san-miguel.vox.gz");
+    *data.0.borrow_mut() = Some(parse_scene(&bytes));
+}
+
+#[cfg(target_arch = "wasm32")]
+fn set_scene(data: Res<SceneData>) {
+    let asset = data.0.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        let response = gloo_net::http::Request::get("./assets/san-miguel.vox.gz")
+            .send()
+            .await
+            .expect("failed to fetch san-miguel.vox.gz");
+        assert!(response.ok(), "failed to fetch san-miguel.vox.gz");
+        let bytes = response
+            .binary()
+            .await
+            .expect("failed to read san-miguel.vox.gz response");
+        *asset.borrow_mut() = Some(parse_scene(&bytes));
+    });
+}
+
+fn parse_scene(bytes: &[u8]) -> VoxAsset {
+    let mut decoded = Vec::new();
+    let bytes = if bytes.starts_with(&[0x1f, 0x8b]) {
+        GzDecoder::new(bytes)
+            .read_to_end(&mut decoded)
+            .expect("failed to decompress san-miguel.vox.gz");
+        decoded.as_slice()
+    } else {
+        bytes
+    };
+    vox::load(bytes).expect("failed to load vox model")
+}
+
+fn load_scene(mut commands: Commands, mut palette: ColorPalette, data: Res<SceneData>) {
+    let Some(scene) = data.0.borrow_mut().take() else {
+        return;
+    };
+
+    *palette = scene.palette;
+    commands.spawn(Scene { grid: scene.grid });
 }
 
 fn setup_lights(mut commands: Commands) {

@@ -17,9 +17,12 @@ path = "src/main.rs"
 
 [dependencies]
 vyas = { path = "../vyas", features = ["egui"] }
+flate2 = "1.1"
 glam.workspace = true
 egui.workspace = true
 web-time.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+gloo-net.workspace = true
