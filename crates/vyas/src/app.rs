@@ -286,7 +286,10 @@ impl ApplicationHandler<Client> for App {
             WindowEvent::Occluded(occluded) => self.occluded = *occluded,
             _ => {}
         }
+        #[cfg(not(target_arch = "wasm32"))]
         let render_active = self.focused && !self.occluded;
+        #[cfg(target_arch = "wasm32")]
+        let render_active = !self.occluded;
 
         #[cfg(feature = "egui")]
         let mut is_egui_event = false;

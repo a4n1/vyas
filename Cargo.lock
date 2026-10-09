@@ -865,6 +865,7 @@ dependencies = [
  "vyas",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
 ]
 

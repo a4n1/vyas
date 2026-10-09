@@ -95,6 +95,14 @@ fn load_scene(mut commands: Commands, mut palette: ColorPalette, data: Res<Scene
 
     *palette = scene.palette;
     commands.spawn(Scene { grid: scene.grid });
+
+    #[cfg(target_arch = "wasm32")]
+    if let Some(loader) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id("loader"))
+    {
+        let _ = loader.set_class_name("hidden");
+    }
 }
 
 fn setup_lights(mut commands: Commands) {
