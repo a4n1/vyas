@@ -52,6 +52,19 @@ impl Egui {
             }
         });
 
+        if full_output
+            .viewport_output
+            .get(&ViewportId::ROOT)
+            .is_some_and(|output| {
+                output
+                    .commands
+                    .iter()
+                    .any(|command| matches!(command, egui::ViewportCommand::StartDrag))
+            })
+        {
+            let _ = window.drag_window();
+        }
+
         self.state
             .handle_platform_output(window, full_output.platform_output);
 

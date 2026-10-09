@@ -1,4 +1,5 @@
 mod camera;
+mod ui;
 
 use std::fs;
 
@@ -28,15 +29,11 @@ fn main() {
     let controller = NoClipCamera::new(&camera.position, &camera.looking_at);
 
     App::new()
-        .set_name("Vyas")
+        .set_name(ui::APP_NAME)
         .set_camera(camera)
         .set_cursor_capture(true)
         .set_render_config(render_config)
-        .set_egui(|ctx| {
-            egui::Window::new("Controls").show(ctx, |ui| {
-                ui.label("Hello from egui");
-            });
-        })
+        .set_egui(ui::draw)
         .insert_resource(controller)
         .add_systems(Startup, load_scene)
         .add_systems(Startup, setup_lights)
