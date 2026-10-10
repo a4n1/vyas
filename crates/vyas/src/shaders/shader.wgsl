@@ -12,6 +12,7 @@ struct RenderConfig {
     crt: u32,
     fallback_brickmap_size: u32,
     fill_color: vec3f,
+    time: f32,
 };
 
 @group(0) @binding(1)
@@ -194,7 +195,78 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
         stepPosition += vec3i(mask) * stepDirection;
     }
 
-    textureStore(base_color_texture, position, vec4f(config.fill_color, 1.0));
+    textureStore(base_color_texture, position, vec4f(skyColor(rayOrigin, rayDirection), 1.0));
+}
+
+fn skyColor(rayOrigin: vec3f, rayDirection: vec3f) -> vec3f {
+    const cloudHeight: f32 = 1000.0;
+    const cloudScale: f32 = 0.002;
+    const cloudOctaves: u32 = 4u;
+    const cloudBaseWind: vec2f = vec2f(0.05, 0.025);
+    const cloudWarpWind: vec2f = vec2f(0.08, -0.02);
+    const cloudWarpOffset: vec2f = vec2f(5.2, 1.3);
+    const cloudWarpStrength: f32 = 1.0;
+    const cloudDensityThreshold: f32 = 0.6;
+    const cloudEdgeSoftness: f32 = 0.2;
+    const cloudHorizonFade: f32 = 0.5;
+    const cloudColor: vec3f = vec3f(1.0);
+    const cloudOpacity: vec3f = vec3f(0.8);
+
+    let horizon = vec3f(0.58, 0.78, 0.96);
+    let zenith = vec3f(0.18, 0.43, 0.82);
+    let sky = mix(horizon, zenith, clamp(rayDirection.y * 2.0, 0.0, 1.0));
+
+    if rayDirection.y <= 0.0 {
+        return sky;
+    }
+
+    let distance = (cloudHeight - rayOrigin.y) / max(rayDirection.y, 0.01);
+    let p = (rayOrigin.xz + rayDirection.xz * distance) * cloudScale;
+    let baseWind = config.time * cloudBaseWind;
+    let warpWind = config.time * cloudWarpWind;
+    let q = vec2f(
+        fbm(p + warpWind, cloudOctaves),
+        fbm(p + warpWind + cloudWarpOffset, cloudOctaves),
+    );
+    let density = fbm(p + baseWind + q * cloudWarpStrength, cloudOctaves);
+    let cloudMask = smoothstep(
+        cloudDensityThreshold,
+        cloudDensityThreshold + cloudEdgeSoftness,
+        density,
+    ) * smoothstep(0.0, cloudHorizonFade, rayDirection.y);
+
+    return mix(sky, cloudColor, cloudMask * cloudOpacity);
+}
+
+fn hash_2d(p: vec2f) -> f32 {
+    let n = dot(p, vec2f(127.1, 311.7));
+    return fract(sin(n) * 43758.5453123);
+}
+
+fn noise_2d(p: vec2f) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+
+    let a = hash_2d(i);
+    let b = hash_2d(i + vec2f(1.0, 0.0));
+    let c = hash_2d(i + vec2f(0.0, 1.0));
+    let d = hash_2d(i + vec2f(1.0, 1.0));
+
+    let u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+fn fbm(p: vec2f, octaves: u32) -> f32 {
+    var value = 0.0;
+    var amp = 0.5;
+    var freq = 1.0;
+
+    for (var i = 0u; i < octaves; i++) {
+        value += amp * noise_2d(p * freq);
+        freq *= 2.0;
+        amp *= 0.5;
+    }
+    return value;
 }
 
 fn raytraceBrickmap(
@@ -591,9 +663,15 @@ fn fs_main(input: Vertex) -> @location(0) vec4<f32> {
 
     let surface = textureLoad(surface_data_sampled, vec2i(pixel), 0);
 
+    var crt_effect = 1.0;
+    if config.crt == 1 {
+        let banding = abs(sin(input.position.x * 5.0));
+        crt_effect = mix(1.0, banding, 0.3);
+    }
+
     let faceId = surface.r;
     if faceId == 0u {
-        return color;
+        return vec4f(color.rgb * crt_effect, color.a);
     }
 
     let normal = normalFromFaceId(faceId);
@@ -605,12 +683,6 @@ fn fs_main(input: Vertex) -> @location(0) vec4<f32> {
     let directional = lights.directional_light.rgb * lights.directional_light.a * diffuse;
     let shadow = f32(surface.g);
 
-    var crt_effect = 1.0;
-
-    if config.crt == 1 {
-        let banding = abs(sin(input.position.x));
-        crt_effect = mix(1.0, banding, 0.3);
-    }
-
     return vec4f(color.rgb * (ambient + directional * shadow) * crt_effect, color.a);
 }
+

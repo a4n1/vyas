@@ -48,14 +48,14 @@ impl Default for RenderConfigState {
 }
 
 impl RenderConfigState {
-    pub(crate) fn to_gpu(self) -> RenderConfigGpu {
+    pub(crate) fn to_gpu(self, time: f32) -> RenderConfigGpu {
         RenderConfigGpu {
             brickmap_size: self.brickmap_size,
             brickgrid_size: self.brickgrid_size,
             crt: u32::from(self.crt),
             fallback_brickmap_size: FALLBACK_BRICKMAP_SIZE,
             fill_color: self.fill_color.into(),
-            _padding1: 0,
+            time,
         }
     }
 }
@@ -68,7 +68,7 @@ pub struct RenderConfigGpu {
     crt: u32,
     fallback_brickmap_size: u32,
     fill_color: [f32; 3],
-    _padding1: u32,
+    time: f32,
 }
 
 #[derive(Debug, Default)]

@@ -1,4 +1,5 @@
 use std::sync::{Arc, mpsc};
+use web_time::Instant;
 
 #[cfg(not(feature = "egui"))]
 use std::iter;
@@ -31,6 +32,7 @@ pub(crate) struct Graphics {
     pub(crate) egui: Egui,
     surface: wgpu::Surface<'static>,
     queue: wgpu::Queue,
+    start_time: Instant,
     state: State,
 }
 
@@ -143,6 +145,7 @@ impl Graphics {
             egui,
             surface,
             queue,
+            start_time: Instant::now(),
             state: State {
                 is_surface_configured: false,
                 brickmap_buffer: BrickmapBuffer::new(),
@@ -224,7 +227,9 @@ impl Graphics {
         self.queue.write_buffer(
             &pipeline.render_config_buffer,
             0,
-            bytemuck::cast_slice(&[pipeline.render_config.to_gpu()]),
+            bytemuck::cast_slice(&[pipeline
+                .render_config
+                .to_gpu(self.start_time.elapsed().as_secs_f32())]),
         );
 
         self.queue.write_buffer(

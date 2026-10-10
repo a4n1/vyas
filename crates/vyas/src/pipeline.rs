@@ -65,7 +65,7 @@ impl Pipeline {
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("render-config-buffer"),
-                    contents: bytemuck::cast_slice(&[render_config.to_gpu()]),
+                    contents: bytemuck::cast_slice(&[render_config.to_gpu(0.0)]),
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
