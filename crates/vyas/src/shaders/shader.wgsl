@@ -155,7 +155,7 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
                     traversalDirection,
                     brickmap,
                     entryFaceId,
-                    rayEntryDistance
+                    vec3f(stepPosition) * brickmapSize,
                 ) {
                     return;
                 }
@@ -176,7 +176,7 @@ fn raytrace(@builtin(global_invocation_id) id: vec3u) {
                     traversalDirection,
                     fallback_brickmaps[index],
                     entryFaceId,
-                    rayEntryDistance,
+                    vec3f(stepPosition) * brickmapSize,
                 ) {
                     return;
                 }
@@ -275,7 +275,7 @@ fn raytraceBrickmap(
     rayDirection: vec3f,
     brickmap: Brickmap,
     entryFaceId: u32,
-    rayEntryDistance: f32,
+    brickmapOrigin: vec3f,
 ) -> bool {
     let brickmapSize = i32(config.brickmap_size);
 
@@ -290,7 +290,6 @@ fn raytraceBrickmap(
         + 0.5
     ) * deltaDist;
     var faceId = entryFaceId;
-    var voxelEntryDistance = 0.0;
 
     for (var i = 0; i < brickmapSize * 3; i++) {
         if any(mapPos < vec3i(0)) || any(mapPos >= vec3i(brickmapSize)) {
@@ -318,13 +317,12 @@ fn raytraceBrickmap(
             let paletteIndex = (packedColorIndices >> ((colorByteIndex % 4u) * 8u)) & 0xffu;
             let color = color_palette[paletteIndex];
 
-            let hitPosition = camera.position.xyz + rayDirection * (rayEntryDistance + voxelEntryDistance);
-            writeSurfaceHit(position, color, faceId, hitPosition);
+            let shadowPosition = voxelFaceCenter(brickmapOrigin, mapPos, 1.0, faceId);
+            writeSurfaceHit(position, color, faceId, shadowPosition);
 
             return true;
         }
 
-        voxelEntryDistance = min(min(sideDist.x, sideDist.y), sideDist.z);
         let mask = sideDist <= min(sideDist.yzx, sideDist.zxy);
         faceId = faceIdFromNormal(-vec3i(mask) * rayStep);
 
@@ -341,7 +339,7 @@ fn raytraceFallbackBrickmap(
     rayDirection: vec3f,
     brickmap: FallbackBrickmap,
     entryFaceId: u32,
-    rayEntryDistance: f32,
+    brickmapOrigin: vec3f,
 ) -> bool {
     let fallbackBrickmapSize = i32(config.fallback_brickmap_size);
 
@@ -358,7 +356,6 @@ fn raytraceFallbackBrickmap(
         + 0.5
     ) * deltaDist;
     var faceId = entryFaceId;
-    var distance = 0.0;
 
     for (var i = 0; i < fallbackBrickmapSize * 3; i++) {
         if any(mapPos < vec3i(0)) || any(mapPos >= vec3i(fallbackBrickmapSize)) {
@@ -369,12 +366,11 @@ fn raytraceFallbackBrickmap(
         if (brickmap.solid_mask & (1u << voxelIndex)) != 0u {
             let packedColors = brickmap.colors[voxelIndex / 4u];
             let paletteIndex = (packedColors >> ((voxelIndex % 4u) * 8u)) & 0xffu;
-            let hitPosition = camera.position.xyz + rayDirection * (rayEntryDistance + distance);
-            writeSurfaceHit(position, color_palette[paletteIndex], faceId, hitPosition);
+            let shadowPosition = voxelFaceCenter(brickmapOrigin, mapPos, voxelSize, faceId);
+            writeSurfaceHit(position, color_palette[paletteIndex], faceId, shadowPosition);
             return true;
         }
 
-        distance = min(min(sideDist.x, sideDist.y), sideDist.z);
         let mask = sideDist <= min(sideDist.yzx, sideDist.zxy);
         faceId = faceIdFromNormal(-vec3i(mask) * rayStep);
         sideDist += vec3f(mask) * deltaDist;
@@ -384,11 +380,16 @@ fn raytraceFallbackBrickmap(
     return false;
 }
 
+fn voxelFaceCenter(brickmapOrigin: vec3f, mapPos: vec3i, voxelSize: f32, faceId: u32) -> vec3f {
+    return brickmapOrigin
+        + (vec3f(mapPos) + vec3f(0.5)) * voxelSize
+        + normalFromFaceId(faceId) * (voxelSize * 0.5);
+}
 
-fn writeSurfaceHit(position: vec2u, color: u32, faceId: u32, hitPosition: vec3f) {
+fn writeSurfaceHit(position: vec2u, color: u32, faceId: u32, shadowPosition: vec3f) {
     var visibility = 1u;
     if faceId != 0u {
-        if raytraceShadow(hitPosition, normalFromFaceId(faceId)) {
+        if raytraceShadow(shadowPosition, normalFromFaceId(faceId)) {
             visibility = 0u;
         }
     }
