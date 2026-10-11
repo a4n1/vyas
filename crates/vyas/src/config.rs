@@ -16,6 +16,7 @@ pub struct RenderConfigState {
     pub resolution: Resolution,
     pub vsync: bool,
     pub crt: bool,
+    pub saturation: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,6 +44,7 @@ impl Default for RenderConfigState {
             resolution: Resolution::default(),
             vsync: true,
             crt: false,
+            saturation: 0.0,
         }
     }
 }
@@ -55,7 +57,9 @@ impl RenderConfigState {
             crt: u32::from(self.crt),
             fallback_brickmap_size: FALLBACK_BRICKMAP_SIZE,
             fill_color: self.fill_color.into(),
+            saturation: self.saturation,
             time,
+            padding: [0.0; 3],
         }
     }
 }
@@ -68,7 +72,9 @@ pub struct RenderConfigGpu {
     crt: u32,
     fallback_brickmap_size: u32,
     fill_color: [f32; 3],
+    saturation: f32,
     time: f32,
+    padding: [f32; 3],
 }
 
 #[derive(Debug, Default)]
@@ -79,6 +85,7 @@ pub struct RenderConfigBuilder {
     resolution: Option<Resolution>,
     vsync: Option<bool>,
     crt: Option<bool>,
+    saturation: Option<f32>,
 }
 
 impl RenderConfigBuilder {
@@ -116,6 +123,11 @@ impl RenderConfigBuilder {
         self
     }
 
+    pub fn saturation(mut self, value: f32) -> Self {
+        self.saturation = Some(value);
+        self
+    }
+
     pub fn build(self) -> RenderConfigState {
         let default = RenderConfigState::default();
 
@@ -126,6 +138,7 @@ impl RenderConfigBuilder {
             resolution: self.resolution.unwrap_or(default.resolution),
             vsync: self.vsync.unwrap_or(default.vsync),
             crt: self.crt.unwrap_or(default.crt),
+            saturation: self.saturation.unwrap_or(default.saturation),
         }
     }
 }

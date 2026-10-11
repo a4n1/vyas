@@ -13,6 +13,7 @@ pub fn run() {
     let render_config = RenderConfigBuilder::new()
         .resolution(Resolution::Scale(0.3))
         .crt(true)
+        .saturation(0.3)
         .build();
 
     let camera = CameraConfig {

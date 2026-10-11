@@ -12,6 +12,7 @@ struct RenderConfig {
     crt: u32,
     fallback_brickmap_size: u32,
     fill_color: vec3f,
+    saturation: f32,
     time: f32,
 };
 
@@ -684,6 +685,65 @@ fn fs_main(input: Vertex) -> @location(0) vec4<f32> {
     let directional = lights.directional_light.rgb * lights.directional_light.a * diffuse;
     let shadow = f32(surface.g);
 
-    return vec4f(color.rgb * (ambient + directional * shadow) * crt_effect, color.a);
+    let adjustedColor = adjustColor(color.rgb, config);
+
+    return vec4f(adjustedColor * (ambient + directional * shadow) * crt_effect, color.a);
+}
+
+fn adjustColor(color: vec3f, config: RenderConfig) -> vec3f {
+    let hsl = rgbToHsl(color.rgb);
+
+    let hue = hsl.h;
+    let saturation = clamp(hsl.s * (1.0 + config.saturation), 0.0, 1.0);
+    let lightness = hsl.l;
+
+    let adjustedColor = hslToRgb(HSL(
+        hue,
+        saturation,
+        lightness,
+    ));
+
+    return adjustedColor;
+}
+
+struct HSL {
+  h: f32,
+  s: f32,
+  l: f32,
+};
+ 
+fn rgbToHsl(rgb: vec3f) -> HSL {
+  let cMin = min(min(rgb.r, rgb.b), rgb.g);
+  let cMax = max(max(rgb.r, rgb.b), rgb.g);
+  let delta = cMax - cMin;
+ 
+  let l = (cMax + cMin) / 2.0;
+  if (delta == 0.0) {
+    return HSL(0, 0, l);
+  }
+ 
+  var h = 0.0;
+  if (rgb.r == cMax) {
+    h = (rgb.g - rgb.b) / delta;
+  } else if (rgb.g == cMax) {
+    h = 2.0 + (rgb.b - rgb.r) / delta;
+  } else {
+    h = 4.0 + (rgb.r - rgb.g) / delta;
+  }
+  h = h / 6.0;
+  let s = delta / (1.0 - abs(2.0 * l - 1.0));
+  return HSL(h, s, l);
+}
+
+fn hslToRgb(hsl: HSL) -> vec3f {
+  let c = vec3f(fract(hsl.h), clamp(vec2f(hsl.s, hsl.l), vec2f(0), vec2f(1)));
+  let rgb = clamp(abs((c.x * 6.0 + vec3f(0.0, 4.0, 2.0)) % 6.0 - 3.0) - 1.0, vec3f(0), vec3f(1));
+  return c.z + c.y * (rgb - 0.5) * (1.0 - abs(2.0 * c.z - 1.0));
+}
+
+fn adjustHSL(color: vec3f, adjust: HSL) -> vec3f {
+  let hsl = rgbToHsl(color);
+  let newHSL = HSL(hsl.h + adjust.h, hsl.s + adjust.s, hsl.l + adjust.l);
+  return hslToRgb(newHSL);
 }
 
